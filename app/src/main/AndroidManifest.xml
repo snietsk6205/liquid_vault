@@ -1,0 +1,202 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Liquid Vault. One APK, two copies: the personal copy (user 0) controls; the Vault copy (inside the work profile) is the
+  profile owner. Components that belong to one side only start disabled and are enabled by the copy that needs them
+  (component state is per user), see SideComponents.kt.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-feature android:name="android.software.device_admin" android:required="false" />
+    <uses-feature android:name="android.software.managed_users" android:required="false" />
+
+    <!-- See every app on both sides (app lists for cloning and for the Vault app tests). -->
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" tools:ignore="QueryAllPackagesPermission" />
+    <!-- Pause / resume the Vault. Med grants it once with adb (MagicOS ignores grants of undeclared permissions). -->
+    <uses-permission android:name="android.permission.MODIFY_QUIET_MODE" tools:ignore="ProtectedPermissions" />
+    <!-- The channel between the two copies (CrossProfileApps), allowed by the Vault copy as profile owner. -->
+    <uses-permission android:name="android.permission.INTERACT_ACROSS_PROFILES" />
+    <!-- Clone check C3: an installer session inside the Vault. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- Check F8 (and later the bridge): All files for this app's Vault copy, given by the profile owner. -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" tools:ignore="ScopedStorage" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <!--
+      Shevery's own client permission (requested, never defined here). The official Shizuku client library adds the
+      legacy request (moe.shizuku.manager.permission.API_V23) itself. See DECISIONS.md, D6.
+    -->
+    <uses-permission android:name="com.hamondev.shevery.permission.PRIVILEGED_API" />
+
+    <application
+        android:name=".VaultApp"
+        android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.LiquidVault"
+        tools:ignore="DataExtractionRules">
+
+        <!-- Tells Shevery's server this app speaks its client API (see ShellDoors.kt). -->
+        <meta-data android:name="com.hamondev.shevery.client.PRIVILEGED_API_SUPPORT" android:value="true" />
+
+        <activity
+            android:name=".ui.MainActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- ===== Profile owner (Vault side) ===== -->
+
+        <receiver
+            android:name=".admin.VaultAdminReceiver"
+            android:exported="true"
+            android:permission="android.permission.BIND_DEVICE_ADMIN">
+            <meta-data android:name="android.app.device_admin" android:resource="@xml/device_admin" />
+            <intent-filter>
+                <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
+                <action android:name="android.app.action.PROFILE_PROVISIONING_COMPLETE" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Android's own setup (check V1) ends here, inside the new profile. -->
+        <activity
+            android:name=".admin.ProvisioningSuccessActivity"
+            android:exported="true"
+            android:permission="android.permission.BIND_DEVICE_ADMIN"
+            android:theme="@style/Theme.LiquidVault.Invisible">
+            <intent-filter>
+                <action android:name="android.app.action.PROVISIONING_SUCCESSFUL" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+        <activity
+            android:name=".admin.GetProvisioningModeActivity"
+            android:exported="true"
+            android:permission="android.permission.BIND_DEVICE_ADMIN"
+            android:theme="@style/Theme.LiquidVault.Invisible">
+            <intent-filter>
+                <action android:name="android.app.action.GET_PROVISIONING_MODE" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+        <activity
+            android:name=".admin.PolicyComplianceActivity"
+            android:exported="true"
+            android:permission="android.permission.BIND_DEVICE_ADMIN"
+            android:theme="@style/Theme.LiquidVault.Invisible">
+            <intent-filter>
+                <action android:name="android.app.action.ADMIN_POLICY_COMPLIANCE" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <!-- The shell path (check V2) starts the new profile with this app already in it: the first start lands here. -->
+        <receiver android:name=".admin.UserInitReceiver" android:exported="false">
+            <intent-filter android:priority="999">
+                <action android:name="android.intent.action.USER_INITIALIZE" />
+            </intent-filter>
+        </receiver>
+
+        <receiver android:name=".boot.BootReceiver" android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- ===== Shell (Shevery / Shizuku API): the server pushes its binder into one of these doors ===== -->
+
+        <provider
+            android:name=".shell.SheveryDoor"
+            android:authorities="${applicationId}.shevery"
+            android:enabled="true"
+            android:exported="true"
+            android:multiprocess="false"
+            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
+        <provider
+            android:name=".shell.ShizukuDoor"
+            android:authorities="${applicationId}.shizuku"
+            android:enabled="true"
+            android:exported="true"
+            android:multiprocess="false"
+            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
+
+        <!-- ===== The channel between the two copies (Insular's Shuttle idea) ===== -->
+
+        <provider
+            android:name=".channel.ChannelProvider"
+            android:authorities="${applicationId}.channel"
+            android:directBootAware="false"
+            android:exported="false"
+            android:grantUriPermissions="true" />
+        <activity
+            android:name=".channel.ChannelToPersonalActivity"
+            android:enabled="false"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:noHistory="true"
+            android:theme="@style/Theme.LiquidVault.Invisible">
+            <intent-filter>
+                <action android:name="dev.liquid.vault.action.CHANNEL_TO_PERSONAL" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+        <activity
+            android:name=".channel.ChannelToVaultActivity"
+            android:enabled="false"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:noHistory="true"
+            android:theme="@style/Theme.LiquidVault.Invisible">
+            <intent-filter>
+                <action android:name="dev.liquid.vault.action.CHANNEL_TO_VAULT" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <!-- ===== The bridge (checks B1, B2) ===== -->
+
+        <provider
+            android:name=".bridge.VaultBridgeProvider"
+            android:authorities="${applicationId}.bridge.vault"
+            android:enabled="false"
+            android:exported="true"
+            android:grantUriPermissions="true"
+            android:permission="android.permission.MANAGE_DOCUMENTS">
+            <intent-filter>
+                <action android:name="android.content.action.DOCUMENTS_PROVIDER" />
+            </intent-filter>
+        </provider>
+        <provider
+            android:name=".bridge.PersonalBridgeProvider"
+            android:authorities="${applicationId}.bridge.personal"
+            android:enabled="false"
+            android:exported="true"
+            android:grantUriPermissions="true"
+            android:permission="android.permission.MANAGE_DOCUMENTS">
+            <intent-filter>
+                <action android:name="android.content.action.DOCUMENTS_PROVIDER" />
+            </intent-filter>
+        </provider>
+
+        <!-- Installer session results (clone check C3). -->
+        <receiver android:name=".clone.InstallResultReceiver" android:exported="false" />
+
+        <!--
+          CI only in practice: lets the emulator test run checks from adb. Guarded by a permission only the shell and the
+          system hold, so no app can use it (anything the shell does here it could already do itself).
+        -->
+        <activity
+            android:name=".automation.AutomationActivity"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL"
+            android:theme="@style/Theme.LiquidVault.Invisible" />
+    </application>
+</manifest>

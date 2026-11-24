@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A vault door: a rounded door with a dial and four bolts, drawn in the 66 dp safe zone of the 108 dp icon. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFBFE3FF"
+        android:strokeWidth="4"
+        android:pathData="M34,30 h40 a8,8 0 0 1 8,8 v32 a8,8 0 0 1 -8,8 h-40 a8,8 0 0 1 -8,-8 v-32 a8,8 0 0 1 8,-8 z" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="4"
+        android:pathData="M54,42 a12,12 0 1 1 0,24 a12,12 0 1 1 0,-24 z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M52,46 h4 v6 h-4 z M52,56 h4 v6 h-4 z M44,52 h6 v4 h-6 z M58,52 h6 v4 h-6 z" />
+    <path
+        android:fillColor="#FFBFE3FF"
+        android:pathData="M22,40 h6 v6 h-6 z M22,62 h6 v6 h-6 z" />
+</vector>

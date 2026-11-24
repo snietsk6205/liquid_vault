@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Liquid Vault</string>
+    <string name="device_admin_label">Liquid Vault</string>
+    <string name="device_admin_description">Owns the Vault (the work profile): its apps, their permissions and the bridge to your personal files.</string>
+</resources>

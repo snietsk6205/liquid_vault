@@ -36,6 +36,9 @@ import dev.liquid.vault.id
 import dev.liquid.vault.shell.Shell
 import dev.liquid.vault.ui.MainActivity
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
@@ -300,9 +303,24 @@ object Runner {
             ?: return r("V1", CheckStatus.FAIL, "no app on this phone handles Android's work-profile setup", lines)
         lines += "Android's setup app: ${handler.activityInfo.packageName}/${handler.activityInfo.name}"
         DebugLog.event("Create", "starting Android's work-profile setup (${handler.activityInfo.packageName})")
-        val (code, _) = host.startForResult(intent)
-        lines += "setup ended with result $code (${if (code == Activity.RESULT_OK) "OK" else "cancelled or refused"})"
-        return if (code == Activity.RESULT_OK) {
+        // Android's setup does not always hand its result back to the app that started it (emulator run 7: the Vault was
+        // made and its copy finished its setup, but no result ever came). So the new profile is watched for too.
+        val (code, made) = coroutineScope {
+            val result = async { host.startForResult(intent) }
+            var appeared: android.os.UserHandle? = null
+            while (!result.isCompleted) {
+                appeared = Env.otherProfiles().firstOrNull { it in Env.profilesWithThisApp() }
+                if (appeared != null) break
+                delay(1_000)
+            }
+            val answer = if (appeared != null) withTimeoutOrNull(5_000) { result.await() } else result.await()
+            if (answer == null) result.cancel()
+            answer?.first to appeared
+        }
+        lines += if (code != null) "setup ended with result $code (${if (code == Activity.RESULT_OK) "OK" else "cancelled or refused"})"
+        else "Android's setup gave no result back (the Vault appeared anyway)"
+        made?.let { lines += "the Vault appeared: user ${it.id}, with Liquid Vault in it" }
+        return if (made != null || code == Activity.RESULT_OK) {
             r("V1", CheckStatus.PASS, "Android's setup made the Vault: the Vault copy finishes its setup; then run V3", lines)
         } else {
             r("V1", CheckStatus.FAIL, "Android's setup ended without a Vault (MagicOS may block it): try V2, the shell way", lines)

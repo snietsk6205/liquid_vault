@@ -252,6 +252,17 @@ if [ "$PART" = "shell" ]; then
 
   section "4. Clone and app-ops with the shell"
   CLONE=$(missing_in_vault)
+  if [ -z "$CLONE" ]; then
+    # Every launchable app is already in the Vault (on the emulator the new profile gets all of them): take one out of
+    # the Vault so the shell can clone it back.
+    CLONE=$(adb shell cmd package query-activities --components --user "$VU" -a android.intent.action.MAIN -c android.intent.category.LAUNCHER 2>/dev/null \
+      | tr -d '\r' | sed -n 's|^[[:space:]]*\([A-Za-z0-9_.][A-Za-z0-9_.]*\)/.*|\1|p' | sort -u \
+      | grep -v -E "^($PKG|com.android.settings|com.android.documentsui|com.google.android.documentsui|com.google.android.apps.nexuslauncher|com.android.launcher3)$" | head -1)
+    if [ -n "$CLONE" ]; then
+      note "every app is already in the Vault: taking $CLONE out of it first"
+      adb shell pm uninstall --user "$VU" "$CLONE" | tr -d '\r' | tail -1
+    fi
+  fi
   note "app to clone: ${CLONE:-none found}"
   if [ -n "$CLONE" ]; then
     run_check 0 C2 PASS 60 --es clone "$CLONE"

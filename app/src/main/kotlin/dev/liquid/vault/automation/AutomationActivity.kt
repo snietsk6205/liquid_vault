@@ -53,7 +53,8 @@ class AutomationActivity : ComponentActivity(), Host {
             finish()
             return
         }
-        val map = extras.keySet().filter { extras.getString(it) != null }.associateWith { extras.getString(it)!! }
+        // adb cannot pass spaces easily: "DESTROY_VAULT" stands for "DESTROY VAULT".
+        val map = extras.keySet().filter { extras.getString(it) != null }.associateWith { k -> extras.getString(k)!!.let { if (k == "confirm") it.replace('_', ' ') else it } }
         lifecycleScope.launch {
             val answer = extras.getString("answer")?.toIntOrNull()
             val result = when {
@@ -65,7 +66,7 @@ class AutomationActivity : ComponentActivity(), Host {
                 else -> Runner.run(id, this@AutomationActivity, map)
             }
             val status = result?.status ?: CheckStatus.NOT_RUN
-            Log.i(VaultApp.LOG_TAG, "AUTOMATION $id ${status.name} — ${result?.summary}")
+            Log.i(VaultApp.LOG_TAG, "AUTOMATION u${Env.myUserId} $id ${status.name} — ${result?.summary}")
             result?.evidence?.forEach { e -> e.lines().forEach { Log.i(VaultApp.LOG_TAG, "AUTOMATION   · $it") } }
             result?.question?.let { Log.i(VaultApp.LOG_TAG, "AUTOMATION   ? $it") }
             finish()

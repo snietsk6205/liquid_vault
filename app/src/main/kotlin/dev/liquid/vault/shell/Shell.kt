@@ -69,7 +69,7 @@ object Shell {
         }
         Shizuku.addRequestPermissionResultListener { _, result ->
             _state.value = _state.value.copy(lastPermissionResult = result)
-            DebugLog.event("Shell", if (result == PackageManager.PERMISSION_GRANTED) "Shevery allowed this app" else "Shevery did not allow this app")
+            DebugLog.event("Shell", if (result == PackageManager.PERMISSION_GRANTED) "the shell server (Shevery) allowed this app" else "the shell server (Shevery) did not allow this app")
         }
     }
 

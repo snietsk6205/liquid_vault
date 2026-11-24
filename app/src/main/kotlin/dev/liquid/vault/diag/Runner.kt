@@ -145,9 +145,17 @@ object Runner {
         "L0" -> l0(host, extras)
         "L1" -> l1()
         "B0" -> b0()
-        "B1" -> if (Env.isVaultSide) b1Vault() else bPick("B1", host, Uri.EMPTY)
+        "B1" -> when {
+            extras["selftest"] == "true" -> selfTest("B1", "${Env.app.packageName}.bridge.vault", vault = true)
+            Env.isVaultSide -> b1Vault()
+            else -> bPick("B1", host, Uri.EMPTY)
+        }
         "B1-undo" -> r("B1-undo", CheckStatus.PASS, "the Work tab is closed to personal apps again", PickerFilters.disable())
-        "B2" -> if (Env.isVaultSide) b2Vault() else bPick("B2", host, DocumentsContract.buildDocumentUri("${Env.app.packageName}.bridge.personal", BridgeProvider.ROOT_DOC))
+        "B2" -> when {
+            extras["selftest"] == "true" -> selfTest("B2", "${Env.app.packageName}.bridge.personal", vault = false)
+            Env.isVaultSide -> b2Vault()
+            else -> bPick("B2", host, DocumentsContract.buildDocumentUri("${Env.app.packageName}.bridge.personal", BridgeProvider.ROOT_DOC))
+        }
         "B3" -> b3()
         "Q0" -> q0()
         "Q1" -> quiet(true)
@@ -662,6 +670,18 @@ object Runner {
             leakQuestion != null -> r(id, CheckStatus.NEEDS_YOU, "the Vault folder opened from the personal side with a lasting grant; one question", lines, leakQuestion)
             else -> r(id, CheckStatus.PASS, "the Vault folder opened from the personal side with a lasting grant", lines)
         }
+    }
+
+    /**
+     * Without the picker (for the emulator test in CI): this copy reads its own bridge provider directly, which
+     * exercises the provider, the rules and, for bridge B, the channel to the Vault copy. Needs no grant (same app).
+     */
+    private fun selfTest(id: String, authority: String, vault: Boolean): CheckResult {
+        sideOnly(id, vault)?.let { return it }
+        val tree = DocumentsContract.buildTreeDocumentUri(authority, BridgeProvider.ROOT_DOC)
+        val lines = mutableListOf("self-test (no picker): $tree")
+        val ok = readTree(tree, lines)
+        return r(id, if (ok) CheckStatus.PASS else CheckStatus.FAIL, if (ok) "self-test: the provider lists the test folder and reads hello.txt" else "self-test failed", lines)
     }
 
     /** Lists a picked folder and reads hello.txt from it. True when both worked. */

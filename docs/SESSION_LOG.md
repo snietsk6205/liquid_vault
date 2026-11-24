@@ -39,7 +39,8 @@ intent filters since Android 13).
 | 4 | `dpm set-profile-owner --name` → "Unknown option"; Android's setup said "Can't set up device" (no role holder) | D19 (no `--name`), D18 (`ALLOW_OFFLINE`) |
 | 5 | Channel intent found no activity; CrossProfileApps said no; F8's undo never reported; the launcher's "isn't responding" dialog hid the setup screens | D20 (filter directions), D21, F8 finishes at the next start, the test taps Wait |
 | 7 | V1 made the Vault but never got Android's result, so it waited forever; no app to clone | D22; the test takes an app out of the Vault first |
-| 8 | **Vault part all green.** Shell part: F7 read "allow" back as "no entry"; one V3 screen never started (CI race) | F6/F7 read Android's default mode; the test restarts a check whose screen did not start |
+| 8 | **Vault part all green.** Shell part: F7 read "allow" back as "no entry"; one V3 screen never started (CI race) | F6/F7 read Android's default mode; the test restarts a check whose screen did not start (D23) |
+| 10 | **Both parts all green**; Android's setup now ends in the Vault copy, which connects the channel by itself. Found: Undo wrote the mode `default` instead of Android's default (`allow`); setting All files on an app that does not ask for it changes nothing | D24 |
 
 Proven on stock Android 14, so a FAIL on the phone points at MagicOS: Android's setup (offline) and the shell way both
 make the Vault; the official Shizuku client connects, asks permission and runs commands as uid 2000; the channel

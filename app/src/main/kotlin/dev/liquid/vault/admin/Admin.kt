@@ -17,6 +17,7 @@ import dev.liquid.vault.core.common.ShellCommands
 import dev.liquid.vault.core.common.asEvidence
 import dev.liquid.vault.diag.Prefs
 import dev.liquid.vault.ui.MainActivity
+import dev.liquid.vault.core.common.StorageOps
 import java.lang.reflect.InvocationTargetException
 
 /**
@@ -166,6 +167,10 @@ object OwnerAppOps {
     }
 
     fun mode(op: String, uid: Int, packageName: String): Int = appOps.unsafeCheckOpRawNoThrow(op, uid, packageName)
+
+    /** Android's own default for a storage, media or All files op (setting it removes the app's entry). */
+    fun defaultMode(op: String): Int =
+        if (StorageOps.defaultMode(op) == "default") AppOpsManager.MODE_DEFAULT else AppOpsManager.MODE_ALLOWED
 
     fun modeName(mode: Int): String = when (mode) {
         AppOpsManager.MODE_ALLOWED -> "allow"

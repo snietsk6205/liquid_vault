@@ -30,6 +30,7 @@ import dev.liquid.vault.core.common.Confirm
 import dev.liquid.vault.core.common.DebugLog
 import dev.liquid.vault.core.common.PhaseZero
 import dev.liquid.vault.core.common.ShellCommands
+import dev.liquid.vault.core.common.StorageOps
 import dev.liquid.vault.core.common.VaultJson
 import dev.liquid.vault.core.common.asEvidence
 import dev.liquid.vault.id
@@ -538,11 +539,15 @@ object Runner {
         val lines = mutableListOf("uid of ${label(pkg)} in the Vault: $uid")
         var anyOk = false
         var firstError: String? = null
+        val undo = mode == AppOpsManager.MODE_DEFAULT
         for (op in ops) {
             val before = OwnerAppOps.mode(op, uid, pkg)
-            val set = runCatching { OwnerAppOps.setMode(op, uid, pkg, mode) }
+            // Undo: Android's own default for the op, which removes the app's entry (StorageOps). The owner can read only
+            // the effective mode, not the app's own entry, so this is the closest to "as before" it can do.
+            val target = if (undo) OwnerAppOps.defaultMode(op) else mode
+            val set = runCatching { OwnerAppOps.setMode(op, uid, pkg, target) }
             val after = OwnerAppOps.mode(op, uid, pkg)
-            if (set.isSuccess && after == mode) anyOk = true
+            if (set.isSuccess && (after == target || undo)) anyOk = true
             set.exceptionOrNull()?.let { if (firstError == null) firstError = it.asEvidence() }
             lines += "$op: ${OwnerAppOps.modeName(before)} → ${OwnerAppOps.modeName(after)}${set.exceptionOrNull()?.let { " (error: ${it.asEvidence()})" } ?: ""}"
         }
@@ -551,11 +556,11 @@ object Runner {
         return when (mode) {
             AppOpsManager.MODE_ERRORED -> r(id, CheckStatus.NEEDS_YOU, "app-ops denied by the owner; now check $app", lines, "Open $app in the Vault. Does it still see your photos or files?")
             AppOpsManager.MODE_ALLOWED -> r(id, CheckStatus.NEEDS_YOU, "app-ops allowed by the owner; now check $app", lines, "Open $app in the Vault. Does it see your photos or files now?")
-            else -> r(id, CheckStatus.PASS, "$app's app-ops are back to default", lines)
+            else -> r(id, CheckStatus.PASS, "$app's app-ops are back to Android's defaults", lines)
         }
     }
 
-    private val shellOps = listOf("READ_EXTERNAL_STORAGE", "WRITE_EXTERNAL_STORAGE", "READ_MEDIA_IMAGES", "READ_MEDIA_VIDEO", "READ_MEDIA_AUDIO", "MANAGE_EXTERNAL_STORAGE")
+    private val shellOps = StorageOps.shellNames
 
     private suspend fun fShellOps(id: String, mode: String): CheckResult {
         sideOnly(id, vault = false)?.let { return it }
@@ -564,23 +569,39 @@ object Runner {
         val vault = Env.vaultUser()?.id ?: return r(id, CheckStatus.SKIPPED, "there is no Vault yet")
         val lines = mutableListOf<String>()
         var matched = 0
+        val undo = mode == "default"
+        val key = Prefs.SHELL_OPS_BEFORE + pkg
+        val saved = StorageOps.decode(Prefs.app.getString(key, null))
+        val before = mutableMapOf<String, String>()
         for (op in shellOps) {
-            val set = Shell.run(ShellCommands.appOpsSet(vault, pkg, op, mode))
+            if (!undo && saved == null) {
+                val was = Shell.run(ShellCommands.appOpsGet(vault, pkg, op))
+                before[op] = ShellCommands.parseAppOpMode(was.output, op) ?: StorageOps.NONE
+            }
+            // Undo puts back the app's own entry from before F6/F7's first change, or no entry (Android's default for the
+            // op, which removes it). Writing "default" would leave an entry that may read as "not allowed" (run 10).
+            val target = if (undo) saved?.get(op)?.takeIf { it != StorageOps.NONE } ?: StorageOps.defaultMode(op) else mode
+            val set = Shell.run(ShellCommands.appOpsSet(vault, pkg, op, target))
             val get = Shell.run(ShellCommands.appOpsGet(vault, pkg, op))
             val now = ShellCommands.parseAppOpMode(get.output, op)
             // No entry means the op is in Android's default mode for it (setting an op to its default removes the entry).
             val default = if (now == null) ShellCommands.parseAppOpDefault(get.output) else null
-            if (set.ok && (now == mode || (now == null && (mode == "default" || default == mode)))) matched++
+            if (set.ok && (now == target || (now == null && default == target))) matched++
             val read = now ?: default?.let { "no entry: Android's default for it, $it" }
                 ?: "no entry (${get.output.lines().map { it.trim() }.filter { it.isNotEmpty() }.joinToString(" · ").take(100)})"
             lines += "$op: set exit ${set.exitCode}${if (set.output.isNotBlank()) " (${set.output.take(120)})" else ""} → $read"
+        }
+        if (!undo && saved == null) Prefs.app.edit().putString(key, StorageOps.encode(before)).commit()
+        if (undo) {
+            lines += if (saved != null) "put back the entries from before F6/F7" else "nothing was saved from before F6/F7: used Android's defaults"
+            Prefs.app.edit().remove(key).apply()
         }
         val app = label(pkg)
         if (matched == 0) return r(id, CheckStatus.FAIL, "the shell could not set the app-ops", lines)
         return when (mode) {
             "deny" -> r(id, CheckStatus.NEEDS_YOU, "app-ops denied by the shell ($matched of ${shellOps.size}); now check $app", lines, "Open $app in the Vault. Does it still see your photos or files?")
             "allow" -> r(id, CheckStatus.NEEDS_YOU, "app-ops allowed by the shell ($matched of ${shellOps.size}); now check $app", lines, "Open $app in the Vault. Does it see your photos or files now?")
-            else -> r(id, CheckStatus.PASS, "$app's app-ops are back to default", lines)
+            else -> r(id, CheckStatus.PASS, "$app's app-ops are back as they were ($matched of ${shellOps.size} read back)", lines)
         }
     }
 

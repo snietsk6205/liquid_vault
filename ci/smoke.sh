@@ -99,22 +99,25 @@ if [ "$PART" = "vault" ]; then
     sleep 1.5
   done
   note_wait "$started" 0 "Android's setup"
+  echo "     Android's setup said (ManagedProvisioning log):"
+  adb logcat -d -s ManagedProvisioning:V 2>/dev/null | tail -25 | sed 's/^/       /' | cut -c1-240
   if tail -n +$((from + 1)) "$LOG" | grep "AUTOMATION u0 V1 " | grep -q " PASS "; then
     pass "V1: Android's setup made the Vault"
   else
     fail "V1: Android's setup made the Vault"
     look v1-end 30
     note "making the Vault by hand with adb so the other checks can run"
-    adb shell pm create-user --profileOf 0 --managed Vault
+    [ -z "$(vault_user)" ] && adb shell pm create-user --profileOf 0 --managed Vault
+    VU=$(vault_user)
+    if [ -n "$VU" ]; then
+      adb shell pm install-existing --user "$VU" "$PKG"
+      adb shell dpm set-profile-owner --user "$VU" "$PKG/.admin.VaultAdminReceiver"
+      adb shell am start-user -w "$VU"
+      adb shell am start --user "$VU" -a dev.liquid.vault.action.FINISH_SETUP -n "$PKG/.ui.MainActivity"
+    fi
   fi
   VU=$(vault_user)
   if [ -z "$VU" ]; then fail "a work profile exists after setup"; finish_smoke "$PART"; fi
-  if ! adb shell dumpsys device_policy 2>/dev/null | tr -d '\r' | grep -q "$PKG"; then
-    adb shell pm install-existing --user "$VU" "$PKG"
-    adb shell dpm set-profile-owner --user "$VU" --name "Liquid Vault" "$PKG/.admin.VaultAdminReceiver"
-    adb shell am start-user -w "$VU"
-    adb shell am start --user "$VU" -a dev.liquid.vault.action.FINISH_SETUP -n "$PKG/.ui.MainActivity"
-  fi
   note "the Vault is user $VU"
   wait_log "Vault setup ran" 60 && pass "the Vault copy ran its setup" || fail "the Vault copy ran its setup"
   wait_log "kept the permission for content://0@" 60 && pass "the Vault copy holds the personal copy's channel permission" || note "the channel did not connect by itself"

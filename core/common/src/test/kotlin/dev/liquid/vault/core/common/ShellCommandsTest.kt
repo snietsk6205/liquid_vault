@@ -13,7 +13,7 @@ class ShellCommandsTest {
         assertEquals(listOf("pm", "create-user", "--profileOf", "0", "--managed", "Vault"), ShellCommands.createVault())
         assertEquals(listOf("pm", "install-existing", "--user", "11", "dev.liquid.vault"), ShellCommands.installExisting(11, "dev.liquid.vault"))
         assertEquals(
-            listOf("dpm", "set-profile-owner", "--user", "11", "--name", "Liquid Vault", "dev.liquid.vault/.admin.VaultAdminReceiver"),
+            listOf("dpm", "set-profile-owner", "--user", "11", "dev.liquid.vault/.admin.VaultAdminReceiver"),
             ShellCommands.setProfileOwner(11, "dev.liquid.vault/.admin.VaultAdminReceiver"),
         )
         assertEquals(listOf("am", "start-user", "-w", "11"), ShellCommands.startUser(11))

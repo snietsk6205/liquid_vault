@@ -291,6 +291,10 @@ object Runner {
             .putExtra(DevicePolicyManager.EXTRA_PROVISIONING_DEVICE_ADMIN_COMPONENT_NAME, Env.admin)
             .putExtra(DevicePolicyManager.EXTRA_PROVISIONING_SKIP_EDUCATION_SCREENS, true)
             .putExtra(DevicePolicyManager.EXTRA_PROVISIONING_LEAVE_ALL_SYSTEM_APPS_ENABLED, true)
+            // Android 13+ hands work-profile setup to a "device management role holder" when one is configured (on
+            // phones with Google services) and refuses with "Can't set up device" when it is not ready. Allowing
+            // offline setup makes Android's own setup do it (emulator test run 4; AOSP PreProvisioningActivityController).
+            .putExtra(DevicePolicyManager.EXTRA_PROVISIONING_ALLOW_OFFLINE, true)
             .also { @Suppress("DEPRECATION") it.putExtra(DevicePolicyManager.EXTRA_PROVISIONING_SKIP_ENCRYPTION, true) }
         val handler = Env.app.packageManager.resolveActivity(intent, 0)
             ?: return r("V1", CheckStatus.FAIL, "no app on this phone handles Android's work-profile setup", lines)

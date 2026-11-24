@@ -43,10 +43,13 @@ object ShellCommands {
     fun installExisting(userId: Int, packageName: String): List<String> =
         listOf("pm", "install-existing", "--user", user(userId), pkg(packageName))
 
-    /** Step 3: our admin receiver becomes the profile owner of the new profile. */
+    /**
+     * Step 3: our admin receiver becomes the profile owner of the new profile. No `--name`: Android 14's dpm rejects it
+     * ("Unknown option: --name", emulator test run 4); the Vault's own setup sets the organisation name instead.
+     */
     fun setProfileOwner(userId: Int, component: String): List<String> {
         require(componentPattern.matches(component)) { "not a component: $component" }
-        return listOf("dpm", "set-profile-owner", "--user", user(userId), "--name", "Liquid Vault", component)
+        return listOf("dpm", "set-profile-owner", "--user", user(userId), component)
     }
 
     /** Step 4: the profile starts (and `-w` waits until it has). */

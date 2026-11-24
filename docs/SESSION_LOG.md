@@ -41,6 +41,7 @@ intent filters since Android 13).
 | 7 | V1 made the Vault but never got Android's result, so it waited forever; no app to clone | D22; the test takes an app out of the Vault first |
 | 8 | **Vault part all green.** Shell part: F7 read "allow" back as "no entry"; one V3 screen never started (CI race) | F6/F7 read Android's default mode; the test restarts a check whose screen did not start (D23) |
 | 10 | **Both parts all green**; Android's setup now ends in the Vault copy, which connects the channel by itself. Found: Undo wrote the mode `default` instead of Android's default (`allow`); setting All files on an app that does not ask for it changes nothing | D24 |
+| 11 | **Both parts all green**, no check restarted; F7's Undo reads back 6 of 6 (Android's defaults) | — |
 
 Proven on stock Android 14, so a FAIL on the phone points at MagicOS: Android's setup (offline) and the shell way both
 make the Vault; the official Shizuku client connects, asks permission and runs commands as uid 2000; the channel
@@ -51,6 +52,10 @@ refused (C1, as Android documents); shell app-ops (F6); pause/resume; boot recor
 with the shell off; destroy through the channel; the typed confirmation refuses a wrong phrase; no crash.
 
 **Known limits**
+- F1, F2, F4 and F5 said SKIPPED on the emulator: no app in its image asks for storage or media access. F4/F5 use
+  the owner app-op path that F8 proved; F1/F2 are documented profile-owner calls. The phone test covers all four.
+- The shell's All files change did not stick for Camera, which does not ask for All files; on the phone, a file app
+  that asks for All files shows whether F4–F7 can change it.
 - The system picker's screens (bridge A's Work tab, bridge B's "Liquid Vault" root) cannot be driven in CI; the
   emulator test reads the same providers through self-tests. The picker flow is TESTING.md steps 19–23.
 - Phase 0's allowed list is per copy and coarse (Liquid Vault + the system picker + chosen packages); Phase 2 replaces it.

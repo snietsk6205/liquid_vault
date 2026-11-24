@@ -568,8 +568,12 @@ object Runner {
             val set = Shell.run(ShellCommands.appOpsSet(vault, pkg, op, mode))
             val get = Shell.run(ShellCommands.appOpsGet(vault, pkg, op))
             val now = ShellCommands.parseAppOpMode(get.output, op)
-            if (set.ok && (now == mode || (mode == "default" && now == null))) matched++
-            lines += "$op: set exit ${set.exitCode}${if (set.output.isNotBlank()) " (${set.output.take(120)})" else ""} → ${now ?: "no entry (default)"}"
+            // No entry means the op is in Android's default mode for it (setting an op to its default removes the entry).
+            val default = if (now == null) ShellCommands.parseAppOpDefault(get.output) else null
+            if (set.ok && (now == mode || (now == null && (mode == "default" || default == mode)))) matched++
+            val read = now ?: default?.let { "no entry: Android's default for it, $it" }
+                ?: "no entry (${get.output.lines().map { it.trim() }.filter { it.isNotEmpty() }.joinToString(" · ").take(100)})"
+            lines += "$op: set exit ${set.exitCode}${if (set.output.isNotBlank()) " (${set.output.take(120)})" else ""} → $read"
         }
         val app = label(pkg)
         if (matched == 0) return r(id, CheckStatus.FAIL, "the shell could not set the app-ops", lines)

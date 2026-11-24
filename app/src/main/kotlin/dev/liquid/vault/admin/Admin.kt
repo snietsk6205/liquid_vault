@@ -183,10 +183,15 @@ object OwnerAppOps {
     }
 }
 
-/** The cross-profile intent filter directions, named for reading. */
+/**
+ * The cross-profile intent filter directions, named for reading. Android's flag names say whose activities may handle
+ * the other side's intents: FLAG_MANAGED_CAN_ACCESS_PARENT forwards intents sent on the personal side into the Vault,
+ * FLAG_PARENT_CAN_ACCESS_MANAGED forwards intents sent in the Vault to the personal side (AOSP
+ * DevicePolicyManagerService.addCrossProfileIntentFilter; emulator run 5 found them swapped here, D20).
+ */
 object Crossing {
-    const val PERSONAL_TO_VAULT = DevicePolicyManager.FLAG_PARENT_CAN_ACCESS_MANAGED
-    const val VAULT_TO_PERSONAL = DevicePolicyManager.FLAG_MANAGED_CAN_ACCESS_PARENT
+    const val PERSONAL_TO_VAULT = DevicePolicyManager.FLAG_MANAGED_CAN_ACCESS_PARENT
+    const val VAULT_TO_PERSONAL = DevicePolicyManager.FLAG_PARENT_CAN_ACCESS_MANAGED
 
     fun filter(action: String, vararg categories: String): IntentFilter = IntentFilter(action).apply {
         categories.forEach { addCategory(it) }

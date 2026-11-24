@@ -301,6 +301,7 @@ private fun actionsFor(
             add(runIt("Check"))
             add(RowAction("Connect (forwarded intent)") { run(id, mapOf("connect" to "forwarded")) })
             if (vaultSide) add(RowAction("Connect (CrossProfileApps)") { run(id, mapOf("connect" to "cpa")) })
+            else add(RowAction("Allow connected apps…") { run(id, mapOf("connect" to "allow-connected")) })
         }
         "B1" -> if (vaultSide) listOf(runIt("Open the Work tab"), RowAction("Undo: close it") { undo("B1", emptyMap()) }) else listOf(runIt("Open the system picker"))
         "B2" -> if (vaultSide) listOf(runIt("Prepare")) else listOf(runIt("Open the system picker"))

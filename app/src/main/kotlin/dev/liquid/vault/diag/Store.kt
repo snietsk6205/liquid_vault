@@ -30,6 +30,8 @@ object Prefs {
     const val SHELL_CREATED_USER = "shell_created_user"
     const val BOOT_RECORD = "boot_record"
     const val LAST_ANSWERS = "last_answers"
+    const val F8_PENDING_MODE = "f8_pending_mode"
+    const val F8_PENDING_BEFORE = "f8_pending_before"
 
     fun of(context: Context): SharedPreferences = context.getSharedPreferences("vault", Context.MODE_PRIVATE)
     val app: SharedPreferences get() = of(Env.app)
@@ -67,6 +69,7 @@ object CheckStore {
             )
         }
         if (interrupted.isNotEmpty()) save()
+        runCatching { Runner.finishPendingF8() }.onFailure { DebugLog.error("Checks", "could not finish F8: ${it.message}") }
     }
 
     fun get(id: String): CheckResult? = _book.value.results[id]

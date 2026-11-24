@@ -82,7 +82,8 @@ the question in the row), INFO, NOT RUN.
     writes what happened into the row: keep the rows as they are for the report.
 
 13. Vault copy: **P1** › Run: PASS ("block screenshots" on and off). **F8** › Run: PASS (the Vault copy gets All files
-    in the Vault); then **Undo**.
+    in the Vault); then **Undo**. Android closes an app whose All files access is removed, so the Vault copy may
+    vanish on Undo: open it again (Open the Vault copy) and F8 shows the result.
 
 ### Clone
 

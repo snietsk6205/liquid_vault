@@ -61,6 +61,16 @@ missing_in_vault() {
     done
 }
 
+# A slow emulator can show "<app> isn't responding": tap Wait (the skill's advice: detect it, dismiss it, note it).
+dismiss_anr() {
+  if on_screen "$1" "isn't responding"; then
+    note "a \"not responding\" dialog was on screen ($(python3 ci/describe_ui.py "$OUT/$1.xml" 1 | head -1 | sed -E 's/ +/ /g' | cut -c1-90)); tapped Wait"
+    tap_text "$1" "Wait" exact || true
+    sleep 1
+    dump "$1"
+  fi
+}
+
 start_app() {
   adb shell am start -W -n "$PKG/.ui.MainActivity" > /dev/null 2>&1
 }
@@ -90,6 +100,7 @@ if [ "$PART" = "vault" ]; then
     if tail -n +$((from + 1)) "$LOG" | grep -q "AUTOMATION u0 V1 "; then break; fi
     i=$((i + 1))
     dump "v1-$i"
+    dismiss_anr "v1-$i"
     tapped=""
     for t in "Accept & continue" "Accept and continue" "Agree and continue" "Continue" "Next" "Agree" "I agree" "Accept" "Got it" "OK" "Done"; do
       if on_screen "v1-$i" "$t" exact; then tap_text "v1-$i" "$t" exact && tapped=$t; break; fi
@@ -137,7 +148,10 @@ if [ "$PART" = "vault" ]; then
   section "4. Profile owner: policy, All files, clone"
   run_check "$VU" P1 PASS 30
   run_check "$VU" F8 PASS 30
-  run_check "$VU" F8 PASS 30 --es undo true
+  # Android kills the app when its All files access is removed: the result is finished at the next start, so read it.
+  adb shell am start --user "$VU" -n "$PKG/.automation.AutomationActivity" --es run F8 --es undo true > /dev/null 2>&1
+  wait_log "F8 finished after Android restarted this copy\|AUTOMATION u$VU F8 " 30 || true
+  run_check "$VU" F8 PASS 30 --es peek true
   CLONE=$(missing_in_vault)
   note "app to clone: ${CLONE:-none found}"
   if [ -n "$CLONE" ]; then

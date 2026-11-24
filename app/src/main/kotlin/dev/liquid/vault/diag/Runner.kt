@@ -568,6 +568,9 @@ object Runner {
         val pkg = Env.app.packageName
         val uid = android.os.Process.myUid()
         val before = Environment.isExternalStorageManager()
+        // Android kills an app when its All files access changes (to remount its storage): this copy may not live to
+        // write the result, so the change is noted first and finished at the next start (finishPendingF8). Emulator run 5.
+        Prefs.app.edit().putInt(Prefs.F8_PENDING_MODE, mode).putBoolean(Prefs.F8_PENDING_BEFORE, before).commit()
         val set = runCatching { OwnerAppOps.setMode(OwnerAppOps.OP_ALL_FILES, uid, pkg, mode) }
         val after = Environment.isExternalStorageManager()
         val lines = mutableListOf(
@@ -576,8 +579,29 @@ object Runner {
             "All files for this app now: $after",
         )
         if (after) lines += "the Vault's storage root lists ${Environment.getExternalStorageDirectory().list()?.size ?: 0} items for this app"
+        Prefs.app.edit().remove(Prefs.F8_PENDING_MODE).remove(Prefs.F8_PENDING_BEFORE).apply()
         if (mode == AppOpsManager.MODE_DEFAULT) return r(id, CheckStatus.PASS, "All files for this app is back to default ($after)", lines)
         return r(id, if (after) CheckStatus.PASS else CheckStatus.FAIL, if (after) "the owner app-op gave this app All files in the Vault" else "All files did not turn on", lines)
+    }
+
+    /** Finishes an F8 change whose process was killed by Android before it could write the result. */
+    fun finishPendingF8() {
+        val prefs = Prefs.app
+        if (!prefs.contains(Prefs.F8_PENDING_MODE)) return
+        val mode = prefs.getInt(Prefs.F8_PENDING_MODE, AppOpsManager.MODE_ALLOWED)
+        val before = prefs.getBoolean(Prefs.F8_PENDING_BEFORE, false)
+        prefs.edit().remove(Prefs.F8_PENDING_MODE).remove(Prefs.F8_PENDING_BEFORE).apply()
+        val now = Environment.isExternalStorageManager()
+        val note = "Android restarted this copy after the change (it remounts an app's storage when All files changes)"
+        val lines = listOf("All files for this app before: $before", "owner app-op set to ${OwnerAppOps.modeName(mode)}", note, "All files for this app now: $now")
+        val result = if (mode == AppOpsManager.MODE_DEFAULT) {
+            val base = CheckStore.get("F8")
+            (base ?: r("F8", CheckStatus.PASS, "")).copy(evidence = (base?.evidence ?: emptyList()) + "undo: All files for this app is back to default ($now)" + lines.map { "  $it" }, atMillis = now())
+        } else {
+            r("F8", if (now) CheckStatus.PASS else CheckStatus.FAIL, if (now) "the owner app-op gave this app All files in the Vault" else "All files did not turn on", lines)
+        }
+        CheckStore.put(result)
+        DebugLog.event("Check", "F8 finished after Android restarted this copy: All files now $now")
     }
 
     // ---------------------------------------------------------------- L: channel
@@ -589,10 +613,21 @@ object Runner {
             "forwarded" -> {
                 host ?: return r("L0", CheckStatus.SKIPPED, "connecting needs the screen")
                 val action = if (Env.isVaultSide) Channel.ACTION_TO_PERSONAL else Channel.ACTION_TO_VAULT
+                val handlers = runCatching {
+                    Env.app.packageManager.queryIntentActivities(Channel.grantIntent(action, Channel.VIA_FORWARDED), PackageManager.MATCH_DEFAULT_ONLY)
+                        .map { "${it.activityInfo.packageName}/${it.activityInfo.name}" }
+                }.getOrElse { listOf(it.asEvidence()) }
+                lines += "Android resolves $action to: ${handlers.ifEmpty { listOf("nothing (no cross-profile filter, or the other copy's activity is off)") }.joinToString()}"
                 lines += "sent this copy's permission with a forwarded intent ($action)"
                 val (code, data) = host.startForResult(Channel.grantIntent(action, Channel.VIA_FORWARDED))
                 lines += "the other copy answered with result $code"
                 lines += Channel.takeGrant(Env.app, data, "the other copy's answer (forwarded intent)")
+            }
+            "allow-connected" -> {
+                host ?: return r("L0", CheckStatus.SKIPPED, "needs the screen")
+                val ask = Env.crossProfile.createRequestInteractAcrossProfilesIntent()
+                lines += "opened Android's \"Connected work & personal apps\" page for Liquid Vault"
+                host.startForResult(ask)
             }
             "cpa" -> {
                 host ?: return r("L0", CheckStatus.SKIPPED, "connecting needs the screen")
@@ -608,7 +643,7 @@ object Runner {
         lines += "this copy may call the other copy (user $other): $ready"
         lines += "how it got that permission: ${Prefs.app.getString(Prefs.CHANNEL_VIA, "never")}"
         lines += "last hello from the other copy: ${Prefs.app.getString(Prefs.CHANNEL_HELLO, "never")}"
-        if (Env.isVaultSide) lines += "CrossProfileApps.canInteractAcrossProfiles: ${runCatching { Env.crossProfile.canInteractAcrossProfiles() }.getOrElse { it.asEvidence() }}"
+        lines += "CrossProfileApps: may work across profiles ${runCatching { Env.crossProfile.canInteractAcrossProfiles() }.getOrElse { it.asEvidence() }}, may ask for it ${runCatching { Env.crossProfile.canRequestInteractAcrossProfiles() }.getOrElse { it.asEvidence() }} (both copies need it: \"Connected work & personal apps\")"
         lines += "lasting permissions this copy holds: " + Env.app.contentResolver.persistedUriPermissions.joinToString { it.uri.toString() }.ifEmpty { "none" }
         if (!ready) return r("L0", CheckStatus.FAIL, "this copy cannot call the other copy yet: tap \"Connect\"", lines)
         val ping = runCatching { Channel.call("ping") }

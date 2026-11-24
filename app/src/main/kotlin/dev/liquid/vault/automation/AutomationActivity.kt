@@ -58,6 +58,8 @@ class AutomationActivity : ComponentActivity(), Host {
         lifecycleScope.launch {
             val answer = extras.getString("answer")?.toIntOrNull()
             val result = when {
+                // Read the saved result without running (for checks whose process Android may kill, like F8).
+                extras.getString("peek") == "true" -> CheckStore.get(id)
                 answer != null -> {
                     Runner.answer(id, answer)
                     CheckStore.get(id)

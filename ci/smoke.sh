@@ -207,7 +207,11 @@ if [ "$PART" = "shell" ]; then
   run_check 0 S2 "FAIL|PASS" 20
   if ! tail -n 20 "$LOG" | grep -q "AUTOMATION u0 S2 PASS"; then
     wait_screen s2-dialog "Allow" 20 || true
-    if tap_text s2-dialog "Allow all the time" exact || tap_text s2-dialog "Allow"; then note "tapped Allow in Shizuku's dialog"; else look s2-dialog 25; fi
+    tapped=""
+    for t in "Allow all the time" "Always allow" "Allow" "ALLOW"; do
+      if tap_text s2-dialog "$t" exact; then tapped=$t; break; fi
+    done
+    if [ -n "$tapped" ]; then note "tapped \"$tapped\" in Shizuku's dialog"; else look s2-dialog 25; fi
     wait_log "allowed this app" 15 || true
     run_check 0 S2 PASS 20
   fi

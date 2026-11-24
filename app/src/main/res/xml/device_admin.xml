@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- wipe-data: the profile owner removes the Vault (check D1). force-lock: locking the Vault later (Phase 1). -->
+<device-admin>
+    <uses-policies>
+        <wipe-data />
+        <force-lock />
+    </uses-policies>
+</device-admin>

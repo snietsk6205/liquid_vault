@@ -1,0 +1,42 @@
+Liquid Vault
+Copyright (C) 2026 snietsk6205
+Licensed under the GNU General Public License, version 3 (see LICENSE).
+
+This product includes or adapts work from the following projects. Their licenses and notices apply to those parts.
+
+------------------------------------------------------------------------------------------------------------------------
+Insular (https://gitlab.com/secure-system/Insular), a fork of Island (https://github.com/oasisfeng/island)
+Copyright (C) Oasis Feng and the Insular contributors. Licensed under the Apache License, Version 2.0.
+
+Adapted (rewritten in this project's own code, following the original approach):
+  - the manual (ADB) Vault setup steps: pm create-user --managed, pm install-existing, dpm set-profile-owner,
+    am start-user (core/common ShellCommands.kt, app diag/Runner.kt check V2), and the first-start receiver
+    (admin/Admin.kt UserInitReceiver, after ManualProvisioningReceiver);
+  - the profile-owner receiver and post-setup steps (admin/Admin.kt, after IslandDeviceAdminReceiver and
+    IslandProvisioning);
+  - the "Shuttle": persistable cross-profile URI grants to the app's own provider, handed over by a cross-profile
+    activity start (channel/Channel.kt, after ShuttleProvider and ShuttleCarrierActivity);
+  - cloning by an installer session fed with the app's own APK files (clone/Clone.kt, after AppInstallerActivity);
+  - app-ops set by the profile owner for apps in its profile (admin/Admin.kt OwnerAppOps, after AppOpsHelper);
+  - File Shuttle's use of the system picker's Work tab (bridge A).
+
+------------------------------------------------------------------------------------------------------------------------
+Shizuku API (https://github.com/RikkaApps/Shizuku-API), Copyright (C) RikkaW. Licensed under the Apache License 2.0.
+Used unmodified as a library (dev.rikka.shizuku:api and :provider 13.1.5). This app requests the client permission the
+library declares; it does not define Shizuku's permissions and uses none of its name, icon or application id.
+
+------------------------------------------------------------------------------------------------------------------------
+Shevery (https://github.com/HmnDev-Tech/shevery, Shevery-API), licensed under the Apache License 2.0.
+Only interoperability identifiers are used (its client permission name, client meta-data name and provider suffix),
+so that Shevery's server can find this app; no code is copied.
+
+------------------------------------------------------------------------------------------------------------------------
+The Liquid kit (core/designsystem), copied from Liquid Launcher (same author). Its settings UI follows WM Keyboard's
+settings (https://github.com/wasi-master/wmkeyboard, MIT License, Copyright (c) 2026 Wasi Master); its glass builds on
+Kyant0's AndroidLiquidGlass "backdrop" library (Apache License 2.0), used as a library. Icons: Material Icons paths
+(Apache License 2.0).
+
+------------------------------------------------------------------------------------------------------------------------
+Android Open Source Project sources were read for platform behaviour (Apache License 2.0); no AOSP code is copied.
+
+The Apache License 2.0 text: https://www.apache.org/licenses/LICENSE-2.0

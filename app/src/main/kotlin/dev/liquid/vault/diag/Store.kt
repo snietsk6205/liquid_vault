@@ -58,6 +58,15 @@ object CheckStore {
             DebugLog.error("Checks", "saved results could not be read (${it.message}); kept aside as checks.broken.json")
             f.renameTo(File(context.filesDir, "checks.broken.json"))
         }.getOrNull()?.copy(side = side.id, userId = Env.myUserId) ?: CheckBook(side.id, Env.myUserId)
+        // A check still "running" in a saved file was cut short (the app closed, the phone restarted): say so, and give
+        // its buttons back.
+        val interrupted = _book.value.results.values.filter { it.status == dev.liquid.vault.core.common.CheckStatus.RUNNING }
+        interrupted.forEach { r ->
+            _book.value = _book.value.with(
+                r.copy(status = dev.liquid.vault.core.common.CheckStatus.NOT_RUN, summary = "interrupted: the app closed while this ran (${r.summary})"),
+            )
+        }
+        if (interrupted.isNotEmpty()) save()
     }
 
     fun get(id: String): CheckResult? = _book.value.results[id]

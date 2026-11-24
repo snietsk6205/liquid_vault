@@ -59,6 +59,41 @@ object TestFolder {
         return lines
     }
 
+    /**
+     * A photo for the storage checks (F1–F7): written through MediaStore into Pictures/Liquid Vault test, so a Vault
+     * gallery or file app sees it exactly when it is allowed to see your photos. Needs no permission (own file).
+     */
+    fun addTestPhoto(): String {
+        val size = 720
+        val bmp = android.graphics.Bitmap.createBitmap(size, size, android.graphics.Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(bmp)
+        val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+        paint.shader = android.graphics.LinearGradient(0f, 0f, size.toFloat(), size.toFloat(), 0xFF7E57C2.toInt(), 0xFF1E88E5.toInt(), android.graphics.Shader.TileMode.CLAMP)
+        canvas.drawRect(0f, 0f, size.toFloat(), size.toFloat(), paint)
+        paint.shader = null
+        paint.color = android.graphics.Color.WHITE
+        paint.textSize = 54f
+        paint.textAlign = android.graphics.Paint.Align.CENTER
+        canvas.drawText("Liquid Vault", size / 2f, size / 2f - 20f, paint)
+        paint.textSize = 34f
+        canvas.drawText("test photo · ${SimpleDateFormat("HH:mm", Locale.ROOT).format(Date())}", size / 2f, size / 2f + 40f, paint)
+        val resolver = Env.app.contentResolver
+        val values = android.content.ContentValues().apply {
+            put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, "liquid-vault-test-${System.currentTimeMillis()}.png")
+            put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "image/png")
+            put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, "${Environment.DIRECTORY_PICTURES}/$NAME")
+            put(android.provider.MediaStore.MediaColumns.IS_PENDING, 1)
+        }
+        val uri = resolver.insert(android.provider.MediaStore.Images.Media.getContentUri(android.provider.MediaStore.VOLUME_EXTERNAL_PRIMARY), values)
+            ?: error("MediaStore did not create the photo")
+        resolver.openOutputStream(uri)?.use { bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+        values.clear()
+        values.put(android.provider.MediaStore.MediaColumns.IS_PENDING, 0)
+        resolver.update(uri, values, null, null)
+        DebugLog.event("Storage", "a test photo was put in the Vault: Pictures/$NAME ($uri)")
+        return "Pictures/$NAME"
+    }
+
     /** The file at [relative] inside the test folder, or null if it is outside it or missing. */
     fun resolve(relative: String): File? {
         val base = dir().canonicalFile

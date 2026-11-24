@@ -759,7 +759,7 @@ object Runner {
     private fun currentBootWall(): Long = System.currentTimeMillis() - SystemClock.elapsedRealtime()
 
     private fun r1(): CheckResult {
-        val rec = bootRecord() ?: return r("R1", CheckStatus.FAIL, "no boot record: this copy has not seen a reboot yet", listOf("restart the phone, unlock it, then run R1 again", "if it still fails, MagicOS may stop Liquid Vault from starting at boot: allow it to start automatically (Phone Manager › App launch)"))
+        val rec = bootRecord() ?: return r("R1", CheckStatus.SKIPPED, "no reboot recorded yet: restart the phone, unlock it, then run R1", listOf("if it still says this after a reboot, MagicOS stopped Liquid Vault from starting at boot: Settings › Apps › App launch › Liquid Vault › Manage manually › Auto-launch on"))
         val same = rec.sameBootAs(currentBootWall())
         val lines = listOf(
             "recorded at ${java.util.Date(rec.recordedAtMillis)} for the boot at ${java.util.Date(rec.bootWallMillis)}",

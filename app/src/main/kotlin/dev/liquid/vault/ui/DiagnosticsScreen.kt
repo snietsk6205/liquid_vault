@@ -258,6 +258,13 @@ private fun GroupExtras(group: String, vaultSide: Boolean, tick: Int, onPick: (P
             if (kind == PickFor.CLONE && vaultSide && target != null && dev.liquid.vault.clone.Cloner.installedHere(Env.app, target)) {
                 TextButton(onClick = { onRemoveFromVault(target) }) { Text("Remove it from the Vault") }
             }
+            if (kind == PickFor.VAULT_APP && vaultSide) {
+                val context = LocalContext.current
+                TextButton(onClick = {
+                    val where = runCatching { dev.liquid.vault.bridge.TestFolder.addTestPhoto() }
+                    Toast.makeText(context, where.fold({ "Test photo saved in the Vault: $it" }, { "Could not save the photo: ${it.message}" }), Toast.LENGTH_LONG).show()
+                }) { Text("Put a test photo in the Vault") }
+            }
         }
     }
 }

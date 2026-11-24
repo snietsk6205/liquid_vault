@@ -79,6 +79,24 @@ missing_in_vault() {
     done
 }
 
+# Launchable apps in the Vault, one package per line.
+vault_launchables() {
+  adb shell cmd package query-activities --components --user "$VU" -a android.intent.action.MAIN -c android.intent.category.LAUNCHER 2>/dev/null \
+    | tr -d '\r' | sed -n 's|^[[:space:]]*\([A-Za-z0-9_.][A-Za-z0-9_.]*\)/.*|\1|p' | sort -u \
+    | grep -v -E "^($PKG|com.android.settings|com.android.documentsui|com.google.android.documentsui|com.google.android.apps.nexuslauncher|com.android.launcher3)$"
+}
+
+# A launchable Vault app that asks for storage or media access (for the F checks), else nothing.
+storage_app_in_vault() {
+  local p
+  vault_launchables | while read -r p; do
+    if adb shell dumpsys package "$p" 2>/dev/null | grep -q -E "android.permission.(READ_MEDIA_IMAGES|READ_EXTERNAL_STORAGE)"; then
+      echo "$p"
+      break
+    fi
+  done
+}
+
 # A slow emulator can show "<app> isn't responding": tap Wait (the skill's advice: detect it, dismiss it, note it).
 dismiss_anr() {
   if on_screen "$1" "isn't responding"; then
@@ -180,6 +198,20 @@ if [ "$PART" = "vault" ]; then
   if [ -n "$CLONE" ]; then
     run_check "$VU" C1 "FAIL|PASS" 30 --es clone "$CLONE"
     run_check "$VU" C4 "PASS|SKIPPED" 40 --es clone "$CLONE"
+  fi
+  FAPP=$(storage_app_in_vault)
+  if [ -n "$FAPP" ]; then
+    note "Vault app for the storage checks: $FAPP (it asks for storage or media access)"
+    run_check "$VU" F1 NEEDS_YOU 30 --es vaultApp "$FAPP"
+    run_check "$VU" F1 PASS 20 --es answer 0
+    run_check "$VU" F2 NEEDS_YOU 30
+    run_check "$VU" F2 "NEEDS_YOU|PASS" 30 --es undo true
+    run_check "$VU" F4 NEEDS_YOU 30
+    run_check "$VU" F5 NEEDS_YOU 30
+    run_check "$VU" F5 "NEEDS_YOU|PASS" 30 --es undo true
+    run_check "$VU" F3 "FAIL|PASS" 30
+  elif [ -n "$CLONE" ]; then
+    note "no Vault app asks for storage or media access: F1 and F4 can only say SKIPPED"
     run_check "$VU" F1 "NEEDS_YOU|SKIPPED" 30 --es vaultApp "$CLONE"
     run_check "$VU" F4 "NEEDS_YOU|SKIPPED" 30 --es vaultApp "$CLONE"
     run_check "$VU" F3 "FAIL|PASS|SKIPPED" 30 --es vaultApp "$CLONE"
@@ -279,9 +311,9 @@ if [ "$PART" = "shell" ]; then
   if [ -z "$CLONE" ]; then
     # Every launchable app is already in the Vault (on the emulator the new profile gets all of them): take one out of
     # the Vault so the shell can clone it back.
-    CLONE=$(adb shell cmd package query-activities --components --user "$VU" -a android.intent.action.MAIN -c android.intent.category.LAUNCHER 2>/dev/null \
-      | tr -d '\r' | sed -n 's|^[[:space:]]*\([A-Za-z0-9_.][A-Za-z0-9_.]*\)/.*|\1|p' | sort -u \
-      | grep -v -E "^($PKG|com.android.settings|com.android.documentsui|com.google.android.documentsui|com.google.android.apps.nexuslauncher|com.android.launcher3)$" | head -1)
+    # Prefer one that asks for storage or media access, so F6/F7 change app-ops it uses.
+    CLONE=$(storage_app_in_vault)
+    [ -z "$CLONE" ] && CLONE=$(vault_launchables | head -1)
     if [ -n "$CLONE" ]; then
       note "every app is already in the Vault: taking $CLONE out of it first"
       adb shell pm uninstall --user "$VU" "$CLONE" | tr -d '\r' | tail -1

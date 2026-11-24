@@ -8,7 +8,7 @@ what Med tests on the phone is in `TESTING.md`.*
 
 | Phase | State |
 |---|---|
-| 0. Proof (Diagnostics) | **Built; the gate waits for two things from Med**: approving the CI runs (GitHub holds every run in this repo) and the signing secrets (`docs/QUESTIONS.md` Q1). Then: emulator test green, release 0.1.0, Med's test report (`TESTING.md` § Phase 0). |
+| 0. Proof (Diagnostics) | **Built, and its emulator test passes on Android 14** (`docs/SESSION_LOG.md`, "Emulator runs"). **The gate waits for the signing secrets** (`docs/QUESTIONS.md` Q1): then release 0.1.0 and Med's test report (`TESTING.md` § Phase 0). |
 | 1. Vault core | Not started (starts after the Phase 0 report) |
 | 2. Access rules | Not started |
 | 3. File manager | Not started |

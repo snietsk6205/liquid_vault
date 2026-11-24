@@ -150,7 +150,8 @@ object Runner {
             Env.isVaultSide -> b1Vault()
             else -> bPick("B1", host, Uri.EMPTY)
         }
-        "B1-undo" -> r("B1-undo", CheckStatus.PASS, "the Work tab is closed to personal apps again", PickerFilters.disable())
+        "B1-undo" -> sideOnly("B1-undo", vault = true)
+            ?: r("B1-undo", CheckStatus.PASS, "the Work tab is closed to personal apps again", PickerFilters.disable())
         "B2" -> when {
             extras["selftest"] == "true" -> selfTest("B2", "${Env.app.packageName}.bridge.personal", vault = false)
             Env.isVaultSide -> b2Vault()

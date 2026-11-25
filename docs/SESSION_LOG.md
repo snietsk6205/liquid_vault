@@ -68,3 +68,31 @@ the Vault copy's icon in Phase 1.
 that commit carries the marker) or the workflow's "Publish a release" button, and give Med the release link. Then wait
 for Med's Phase 0 report (TESTING.md § Phase 0); record each result in `DECISIONS.md` (which mechanisms work on
 MagicOS) before starting Phase 1.
+
+## Session 2 — 2026-11-25 · Phase 0 report, release 0.1.1, then Phase 1
+
+**Asked**: "Here is my Phase 0 phone test report … go through it with me before you start Phase 1." For each
+FAIL/SKIPPED/NOT RUN: test bug, expected Android behaviour or a real MagicOS block, with evidence, recorded in
+DECISIONS; fix the test bugs and the C2/F6 cause "if it's what I think" in a small 0.1.1 with TESTING steps for only
+the changed checks; stop on a real MagicOS block; otherwise start Phase 1 and stop at its gate. Med's checks to verify:
+C2 = `DISALLOW_DEBUGGING_FEATURES` (check with `hasUserRestriction`, see whether clearing it fixes C2 and F6), F6 maybe
+the same cause, F1/F4 a flawed test, S1 in the Vault "not applicable", and how rules by calling package refuse an app
+when the picker is the caller.
+
+Notes on the report: Med's answers to F2/F5/F7 and the reasons for B3/D1 arrived as the template's placeholders, so they
+are treated as unanswered (none changes a conclusion: with Chrome, F2/F5/F7 would read "yes" whatever the policy). The
+second copy of the Vault report is cut off; the first copy is complete.
+
+| # | Point | State | What |
+|---|---|---|---|
+| 1 | Classify every result | Done | `DECISIONS.md` D25–D36, from the report, AOSP 15 sources (UserController, PermissionPolicyService, AppOpsService, ContentProviderHelper, UserRestrictionsUtils, UserTypeFactory, PackageInstallerSession) and Shizuku's server. |
+| 2 | Med's C2 theory | Confirmed, with one open part | C2's error is AOSP's shell check for a user with "no debugging features"; stock Android does not set it on a new work profile. Whether the owner can lift it on MagicOS: P2 (new). |
+| 3 | Med's F6 theory | Partly | F4 and F6's READ/WRITE/All files lines are Android keeping permission-backed app-ops in step (expected, also seen for the owner, who has no shell restriction); F6's READ_MEDIA lines are unexplained until 0.1.1's re-run (test op + P2). |
+| 4 | F1/F4 "test flawed" | Confirmed for F1/F2 (Chrome), corrected for the details | F1/F2 already set the media permissions an app asks for; Chrome asks for none. F4 is expected Android behaviour (D28). |
+| 5 | S1 in the Vault | Corrected | Not "Shevery serves only the personal side": the same shell check keeps Shevery out of the Vault (D27). Now INFO "not needed here". |
+| 6 | Bridge caller = documentsui | Explained | The picker browses; the app is checked when it opens what it picked (D31). B3 now tells each refused app's story; TESTING uses Gmail. |
+| 7 | CI | Fixed | Run 13 (main) failed: after a reboot right after a resume, the Vault copy was "Blocked by work policy". The test reboots first now (D35), and tests P2 end to end (D36). |
+| 8 | Release 0.1.1 | See below | |
+
+**Exact next step (0.1.1 part)**: Med runs `TESTING.md` § Phase 0 re-run and sends the report; if P2 says the owner
+cannot lift "no debugging features", that is recorded as MagicOS behaviour and Q5 closes as "the shell stays out".

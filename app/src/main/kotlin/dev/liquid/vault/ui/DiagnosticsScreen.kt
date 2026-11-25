@@ -86,7 +86,7 @@ private enum class PickFor(val title: String) {
     ALLOW("Allow an app on the bridge"),
 }
 
-private data class AppEntry(val label: String, val pkg: String)
+private data class AppEntry(val label: String, val pkg: String, val note: String? = null)
 
 private data class ConfirmAsk(val title: String, val text: String, val phrase: String, val onOk: () -> Unit)
 
@@ -297,6 +297,11 @@ private fun actionsFor(
             },
         )
         "F2", "F5", "F7", "F8" -> listOf(runIt(), RowAction("Undo") { undo(id, emptyMap()) })
+        "P2" -> if (vaultSide) listOf(
+            runIt("Check"),
+            RowAction("Let the shell in") { run(id, mapOf("lift" to "true")) },
+            RowAction("Undo: block the shell again") { undo(id, emptyMap()) },
+        ) else listOf(runIt("Check with the shell"))
         "L0" -> buildList {
             add(runIt("Check"))
             add(RowAction("Connect (forwarded intent)") { run(id, mapOf("connect" to "forwarded")) })
@@ -386,6 +391,25 @@ private fun StatusChip(status: CheckStatus) {
     )
 }
 
+/** What an app asks for, in the words the storage checks need (which checks it can show). */
+private fun storageNote(pkg: String): String {
+    val pm = Env.app.packageManager
+    val info = runCatching { pm.getPackageInfo(pkg, PackageManager.GET_PERMISSIONS or PackageManager.MATCH_UNINSTALLED_PACKAGES) }.getOrNull()
+        ?: return "?"
+    val req = info.requestedPermissions?.toList() ?: emptyList()
+    val target = info.applicationInfo?.targetSdkVersion ?: 0
+    val parts = mutableListOf<String>()
+    when {
+        req.any { it in dev.liquid.vault.core.common.StorageOps.mediaPermissions } -> parts += "asks for photos/videos: good for F1/F2"
+        req.any { it.endsWith(".READ_EXTERNAL_STORAGE") } && dev.liquid.vault.core.common.StorageOps.policyTestUnsuitable(target, req) != null ->
+            parts += "storage only, built for Android 13+: cannot show F1/F2"
+        req.any { it.endsWith(".READ_EXTERNAL_STORAGE") } -> parts += "asks for storage (older app): good for F1/F2"
+        else -> parts += "asks for no storage permission"
+    }
+    if (req.any { it.endsWith(".MANAGE_EXTERNAL_STORAGE") }) parts += "asks for All files: good for F4–F7"
+    return parts.joinToString(" · ")
+}
+
 /** Apps for a picker. From the Vault side, personal apps come from the package manager (LauncherApps may not look). */
 private fun appsFor(kind: PickFor, vaultSide: Boolean): List<AppEntry> {
     val context = Env.app
@@ -402,7 +426,7 @@ private fun appsFor(kind: PickFor, vaultSide: Boolean): List<AppEntry> {
                 .filter { pm.getLaunchIntentForPackage(it.packageName) != null || it.flags and ApplicationInfo.FLAG_INSTALLED == 0 }
                 .map { AppEntry(pm.getApplicationLabel(it).toString(), it.packageName) }
         }
-        PickFor.VAULT_APP -> fromLauncher(if (vaultSide) Env.myUser else Env.vaultUser())
+        PickFor.VAULT_APP -> fromLauncher(if (vaultSide) Env.myUser else Env.vaultUser()).map { it.copy(note = storageNote(it.pkg)) }
         PickFor.ALLOW -> fromLauncher(Env.myUser)
     }
     return list.filter { it.pkg != own }.distinctBy { it.pkg }.sortedBy { it.label.lowercase() }
@@ -421,6 +445,7 @@ private fun AppPicker(kind: PickFor, vaultSide: Boolean, onDismiss: () -> Unit, 
                     Column(Modifier.fillMaxWidth().clickable { onChoose(app) }.padding(vertical = 10.dp)) {
                         Text(app.label, style = MaterialTheme.typography.bodyLarge)
                         Text(app.pkg, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        app.note?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary) }
                     }
                 }
             }

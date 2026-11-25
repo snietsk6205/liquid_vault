@@ -172,6 +172,16 @@ object OwnerAppOps {
     fun defaultMode(op: String): Int =
         if (StorageOps.defaultMode(op) == "default") AppOpsManager.MODE_DEFAULT else AppOpsManager.MODE_ALLOWED
 
+    /** "allow" / "deny" / "ignore" / "foreground" / "default" → the AppOpsManager mode. */
+    fun modeOf(name: String): Int = when (name) {
+        "allow" -> AppOpsManager.MODE_ALLOWED
+        "deny" -> AppOpsManager.MODE_ERRORED
+        "ignore" -> AppOpsManager.MODE_IGNORED
+        "foreground" -> AppOpsManager.MODE_FOREGROUND
+        "default" -> AppOpsManager.MODE_DEFAULT
+        else -> error("not an app-op mode: $name")
+    }
+
     fun modeName(mode: Int): String = when (mode) {
         AppOpsManager.MODE_ALLOWED -> "allow"
         AppOpsManager.MODE_IGNORED -> "ignore"

@@ -98,6 +98,7 @@ object Shell {
 
     /** Why the shell cannot be used right now, in plain words, or null when it can. */
     fun unavailableReason(): String? = when {
+        !alive && dev.liquid.vault.Env.isVaultSide -> "needs shell: Shevery has not connected to this copy (not needed on the Vault side: see S1)"
         !alive -> "needs shell: Shevery is not running (start it, then come back)"
         !permitted() -> "needs shell: Shevery has not allowed Liquid Vault yet (S2)"
         else -> null

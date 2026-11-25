@@ -4,6 +4,89 @@ One section per phase gate. Do the steps in order; each says what you should see
 (fish shell) with the phone on USB (or wireless) debugging; everything else is taps. When you are done, send me the
 reports (step 30) and anything that surprised you (a screenshot helps).
 
+## Phase 0 re-run (release 0.1.1): only the changed checks
+
+About 25 minutes. Keep the Vault you have (no need to destroy or recreate it). Results of 0.1.0 stay in each copy; the
+rows you re-run are replaced. What each 0.1.0 result meant is in `DECISIONS.md` D25–D36.
+
+### Install
+
+1. Install 0.1.1 over 0.1.0 (the APK from the release page). One install updates both copies:
+
+   ```fish
+   adb install -r ~/Downloads/LiquidVault-0.1.1-build*.apk
+   ```
+
+2. Start Shevery. Swipe Liquid Vault away from recents, open the personal copy, then **Open the Vault copy** once and
+   go back (so both copies run 0.1.1).
+
+### The shell and the Vault (P2, then C2 and F6/F7 again)
+
+3. Personal copy: **P2** › **Check with the shell**. Expect **FAIL** "the Vault blocks the shell". The row lists what
+   `dumpsys user` says about the Vault: the last line tells where "no debugging features" comes from (the profile itself,
+   or device policy).
+
+4. Vault copy: **P2** › **Check**. Expect **FAIL**, and a line "set as Liquid Vault's own policy: yes/no". Then tap
+   **Let the shell in**:
+   - **PASS** "lifted": go on with step 5.
+   - **FAIL** "still on after clearing it": MagicOS keeps the shell out of the Vault and the owner cannot change it. That
+     is a MagicOS answer: skip steps 5–6, do the rest, and send me the report.
+
+5. Only if P2 passed in step 4. Personal copy:
+   - **P2** › **Check with the shell**: PASS "the shell reaches the Vault".
+   - **C2**: under **Clone an app**, keep Aves (or choose an app not in the Vault yet) › Run: PASS, and no "install?"
+     question this time.
+   - **F6** › Run, **F7** › Run, then **F7** › **Undo** (Chrome as the Vault app is fine for these now: they read the
+     result back from Android, you answer nothing). Expect PASS on F6 ("the shell's app-ops reach …: … stayed denied").
+   - Vault copy (swipe it away from recents and open it again): **S1** › Run. With the shell let in, Shevery may now
+     reach the Vault copy too (PASS); INFO "not needed here" is fine.
+
+6. Vault copy: **P2** › **Undo: block the shell again** (until we decide Q5 in `docs/QUESTIONS.md`), then **P2** ›
+   **Check**: FAIL "the Vault blocks the shell" again.
+
+### Storage with a gallery (F1/F2) and the owner's app-ops (F4/F5)
+
+7. If Aves is not in the Vault yet: Vault copy › **Clone an app** › **Choose** › Aves › **C3** › Run › Install.
+
+8. Vault copy › **Storage for a Vault app**: tap **Put a test photo in the Vault**, then **Choose** › **Aves** (the list
+   now says "asks for photos/videos: good for F1/F2"). Open Aves in the Vault once (badged icon) and allow photos if it
+   asks: it should show the purple "Liquid Vault test photo".
+
+9. Vault copy: **F1** › Run, open Aves in the Vault, come back and answer ("No photos now" is the PASS answer). **F2** ›
+   Run, open Aves: the test photo is back ("It shows the photo"). **F2** › **Undo**.
+
+10. Vault copy: **F4** › Run (expect PASS: "the owner's app-ops reach Aves …"; the lines say which app-ops went back
+    because they follow Aves's permissions), **F5** › Run, **F5** › **Undo**. Optional: if you have a file manager that
+    asks for All files access (the list says "asks for All files: good for F4–F7"), clone it with C3 and run F4/F5 with
+    it too.
+
+### The refused app (B3)
+
+11. Bridge B: personal copy › open **Gmail** › compose a new mail › attach a file (paper clip › Attach file). In the
+    picker, open the side menu (☰) › **Liquid Vault** › **Liquid Vault test** › **hello.txt**. Gmail should fail to
+    attach it. Back in the personal copy: **B3** › Run: **PASS** "com.google.android.gm refused when it opened what it
+    picked". Discard the draft.
+
+12. The allowed list, the other way round: personal copy › **The bridge** › **Add an app** › Gmail. Attach hello.txt the
+    same way: now it works. **B3** › Run: it lists Gmail as refused before and "allowed (on the allowed list)" after.
+    Then **Clear the list** (and delete the draft).
+
+13. Bridge A (optional): Vault copy › **B1** › **Open the Work tab**. In Gmail, attach again and switch the picker to
+    **Work** › **Liquid Vault test** › hello.txt: refused (the Vault copy's list is its own). **B3** in the personal copy
+    shows it "through bridge A". Then Vault copy › **B1** › **Undo: close it**.
+
+### Gaps from the first run
+
+14. Personal copy: **Run safe checks**. **R3** should now read the two folder grants (PASS "channel and 2 folder
+    grant(s) work"); it ran before B1/B2 last time.
+
+15. Optional: Vault copy › **Clone an app** › **Choose** an app built into the phone that is not in the Vault yet (for
+    example Calculator or Notepad) › **C4** › Run: PASS (switched on, nothing copied). Phase 1 clones built-in apps
+    this way (D34).
+
+16. Personal copy: **Copy report**, and send it to me. D1 (destroy) and V2 are not needed now: Phase 1's test covers
+    creating and destroying the Vault.
+
 ## Phase 0 — Proof (release 0.1.0)
 
 About 45 minutes. The app has two copies, and you will switch between them:

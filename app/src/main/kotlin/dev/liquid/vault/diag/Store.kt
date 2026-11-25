@@ -34,6 +34,10 @@ object Prefs {
     const val F8_PENDING_BEFORE = "f8_pending_before"
     /** + a package name: that Vault app's own app-op entries before F6/F7 first changed them (StorageOps.encode). */
     const val SHELL_OPS_BEFORE = "shell_ops_before:"
+    /** + a package name: that Vault app's app-op modes before F4/F5 first changed them, as the owner read them. */
+    const val OWNER_OPS_BEFORE = "owner_ops_before:"
+    /** When this copy (the Vault's owner) last lifted "no debugging features" (P2). */
+    const val P2_LIFTED_AT = "p2_lifted_at"
 
     fun of(context: Context): SharedPreferences = context.getSharedPreferences("vault", Context.MODE_PRIVATE)
     val app: SharedPreferences get() = of(Env.app)

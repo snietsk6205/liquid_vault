@@ -26,7 +26,9 @@ import dev.liquid.vault.core.common.asEvidence
 import dev.liquid.vault.diag.ChannelCalls
 import dev.liquid.vault.diag.Prefs
 import dev.liquid.vault.diag.Reports
+import dev.liquid.vault.diag.Runner
 import dev.liquid.vault.id
+import kotlinx.coroutines.runBlocking
 import java.io.File
 import kotlin.concurrent.thread
 
@@ -179,6 +181,18 @@ class ChannelProvider : ContentProvider() {
             "run" -> Bundle().apply { putString("json", ChannelCalls.runHeadless(context, arg ?: "", extras)) }
             "bridgeList" -> TestFolder.listForChannel(arg ?: "")
             "isStorageManager" -> Bundle().apply { putBoolean("value", Environment.isExternalStorageManager()) }
+            // P2 from the personal copy: read, lift ("lift") or put back ("block") "no debugging features" as the owner.
+            "shellAccess" -> {
+                if (!Env.isVaultSide) throw IllegalStateException("only the Vault copy owns the Vault")
+                val result = runBlocking {
+                    if (arg == "block") Runner.undo("P2", null) else Runner.run("P2", null, if (arg == "lift") mapOf("lift" to "true") else emptyMap())
+                }
+                Bundle().apply {
+                    val undoLine = result.evidence.lastOrNull { it.startsWith("undo:") }
+                    putString("summary", if (arg == "block" && undoLine != null) undoLine.removePrefix("undo: ") else result.summary)
+                    putStringArrayList("lines", ArrayList(result.evidence))
+                }
+            }
             "destroy" -> {
                 if (!Confirm.matches(arg ?: "", Confirm.DESTROY_VAULT)) throw SecurityException("the typed confirmation does not match")
                 ChannelCalls.destroyFromChannel(context)

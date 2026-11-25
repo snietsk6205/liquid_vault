@@ -8,8 +8,8 @@ what Med tests on the phone is in `TESTING.md`.*
 
 | Phase | State |
 |---|---|
-| 0. Proof (Diagnostics) | **Built, and its emulator test passes on Android 14** (`docs/SESSION_LOG.md`, "Emulator runs"). **The gate waits for the signing secrets** (`docs/QUESTIONS.md` Q1): then release 0.1.0 and Med's test report (`TESTING.md` § Phase 0). |
-| 1. Vault core | Not started (starts after the Phase 0 report) |
+| 0. Proof (Diagnostics) | **Phone test done** (0.1.0, Med's report 2026-11-25; every result in `DECISIONS.md` D25–D36). **0.1.1** fixes the test bugs it found and adds P2 (the shell and the Vault); Med re-runs only the changed checks (`TESTING.md` § Phase 0 re-run). Nothing found blocks Phase 1. |
+| 1. Vault core | Started 2026-11-25 (session 2), after the Phase 0 report |
 | 2. Access rules | Not started |
 | 3. File manager | Not started |
 | 4. Design | Not started (Phase 0 already uses the kit's settings look) |
@@ -62,6 +62,7 @@ copies device facts, every check with its evidence, and the debug log.
 | **V2** | Create the Vault with the shell | personal | `pm create-user --profileOf 0 --managed Vault`, `pm install-existing --user N`, `dpm set-profile-owner --user N`, `am start-user -w N`, then open the Vault copy to finish setup; each command logged; stops at the first failure | the fallback path (Insular's manual setup) |
 | **V3** | The Vault is ours | both | Vault copy: `isProfileOwnerApp`, `isManagedProfile`, setup finished; personal: Vault user visible to `CrossProfileApps` | setup completed |
 | **P1** | Harmless policy on and off | Vault | `setScreenCaptureDisabled(true)`, read back, `false`, read back | the profile owner can apply and undo policies |
+| **P2** | Shell access to the Vault (0.1.1) | both | Vault: reads "no debugging features" (`DISALLOW_DEBUGGING_FEATURES`), lifts it as owner or puts it back; personal: `pm list packages --user N` and `dumpsys user` through the shell | whether the shell can work in the Vault on MagicOS (C2's failure, D26) |
 | **C1** | Clone: profile owner `installExistingPackage` | Vault | expected to be refused (Android allows it only for "affiliated" profiles) | recorded either way |
 | **C2** | Clone: shell `pm install-existing --user N <app>` | personal | needs shell | the quick path |
 | **C3** | Clone: Vault-side installer | Vault | copies the app's APK files from the personal side into a `PackageInstaller` session in the Vault (Insular's method); may ask you to confirm | the no-shell path |
@@ -101,6 +102,19 @@ cross-profile activity start; two ways are tried and recorded:
   personal copy, which fetches files through the channel.
 - The result (which works on MagicOS, which leaks) goes into `DECISIONS.md` and decides Phase 2's design.
 
+### Phone results (0.1.0)
+
+Summary (details and evidence: `DECISIONS.md` D25–D36):
+
+- **Works on MagicOS:** Android's own setup (V1), owner policies (P1), All files by the owner's app-op (F8), clone by
+  installer session (C3, Android asks to confirm), the channel by forwarded intent (L0/L1), both bridges with lasting
+  grants (B1/B2), pause/resume without shell (Q1/Q2), both copies start at boot, Shevery through its own client API.
+- **Refused as Android documents:** C1 (owner's install-existing), F3 (All files by policy).
+- **MagicOS difference:** the Vault has "no debugging features", so the shell cannot reach it (C2, and the Vault copy's
+  S1). Whether the owner can lift it: P2 (0.1.1).
+- **Test bugs:** F1/F2 used Chrome (cannot show a storage policy); F4–F7 changed app-ops that Android keeps in step with
+  the app's permissions; R3 passed with nothing to check; B3 named no app. Fixed in 0.1.1.
+
 ### Phase 0 gate
 
 1. Release 0.1.0 (needs the signing secrets, see `docs/QUESTIONS.md` Q1).
@@ -108,6 +122,12 @@ cross-profile activity start; two ways are tried and recorded:
 3. Stop; wait for Med's report. Record every result in `DECISIONS.md` (which mechanisms work on MagicOS).
 
 ## Phase 1 — Vault core (after the Phase 0 report)
+
+From the phone results: create with Android's setup (V1), the shell way only as a fallback; clone built-in apps by
+switching them on (C4's `enableSystemApp`, nothing copied, D34), other apps with the installer session (C3, Android
+asks once per app), and with the shell's `install-existing` (silent) only while the Vault lets the shell in (Q5,
+default: closed); storage and media rules for Vault apps by the owner's permission policy, All files by app-op (Phase 2,
+D28–D30); bridge B (Q3).
 
 Create/destroy (the winning path from V1/V2), app lists for both sides, clone (winning method), freeze
 (`setApplicationHidden`), hide, suspend (`setPackagesSuspended`), pause/resume, per-side VPN (`setAlwaysOnVpnPackage`

@@ -8,7 +8,7 @@ what Med tests on the phone is in `TESTING.md`.*
 
 | Phase | State |
 |---|---|
-| 0. Proof (Diagnostics) | **Built; the gate waits for two things from Med**: approving the CI runs (GitHub holds every run in this repo) and the signing secrets (`docs/QUESTIONS.md` Q1). Then: emulator test green, release 0.1.0, Med's test report (`TESTING.md` § Phase 0). |
+| 0. Proof (Diagnostics) | **Built, and its emulator test passes on Android 14** (`docs/SESSION_LOG.md`, "Emulator runs"). **The gate waits for the signing secrets** (`docs/QUESTIONS.md` Q1): then release 0.1.0 and Med's test report (`TESTING.md` § Phase 0). |
 | 1. Vault core | Not started (starts after the Phase 0 report) |
 | 2. Access rules | Not started |
 | 3. File manager | Not started |
@@ -113,12 +113,14 @@ Create/destroy (the winning path from V1/V2), app lists for both sides, clone (w
 (`setApplicationHidden`), hide, suspend (`setPackagesSuspended`), pause/resume, per-side VPN (`setAlwaysOnVpnPackage`
 in the Vault; personal side through the shell or the system setting), Vault password (separate work challenge, test
 whether MagicOS locks storage), reboot-safe behaviour, **Shell status** card, **action queue** for shell-only actions
-(applied when the shell is back), optional Wireless-debugging restart at boot with `WRITE_SECURE_SETTINGS`.
+(applied when the shell is back), optional Wireless-debugging restart at boot with `WRITE_SECURE_SETTINGS`. The Vault
+copy's icon is hidden from the Work tab (opened from the personal copy), with an option to show it (Q4).
 
 ## Phase 2 — Access rules
 
 Rules screen (app × side × scope none / folders / all files × read-only / read-write), presets, enforcement in the
-bridge (the mechanism chosen in Phase 0), "All files" per app per side (app-op), access log screen, rules
+bridge (the mechanism chosen in Phase 0: bridge B, which keeps the Work tab closed, unless it fails on MagicOS; Q3),
+"All files" per app per side (app-op), access log screen, rules
 backup/export. Optional Locked folder (inside the personal copy's private data).
 
 ## Phase 3 — File manager
@@ -133,6 +135,7 @@ search, reset, backup and live previews.
 
 ## Phase 5 — Launcher integration
 
-A signature-level permission API (same signing key as the launcher, see `docs/QUESTIONS.md` Q1): pause/resume,
+A signature-level permission API (same signing key: the launcher moves to the Vault's new private key with Android's
+key rotation, Q1): pause/resume,
 bridge rules for the launcher (wallpapers from Vault folders), hooks for launcher layouts. Vault apps in the
 launcher's drawer need no API (`LauncherApps`).

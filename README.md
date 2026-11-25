@@ -13,7 +13,7 @@ phases will rely on. See `docs/PLAN.md` for the phases and `TESTING.md` for the 
 | `docs/BRIEF.md` | the brief, verbatim |
 | `docs/PLAN.md` | the architecture and the phases, kept up to date |
 | `DECISIONS.md` | every choice made without asking, with why and the cost to reverse |
-| `docs/QUESTIONS.md` | open questions and their defaults (Q1: the signing key) |
+| `docs/QUESTIONS.md` | questions for Med, with the answers |
 | `docs/SESSION_LOG.md` | what each session did, and the exact next step |
 | `TESTING.md` | what to test on the phone, per phase |
 | `CHANGELOG.md` | what changed, per version (also the release notes and the app's What's new) |

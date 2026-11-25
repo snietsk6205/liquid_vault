@@ -66,6 +66,9 @@ class ShellCommandsTest {
         assertEquals("deny", ShellCommands.parseAppOpMode("MANAGE_EXTERNAL_STORAGE: deny; time=+5m3s ago", "MANAGE_EXTERNAL_STORAGE"))
         assertEquals("allow", ShellCommands.parseAppOpMode("Uid mode: x\nREAD_MEDIA_IMAGES: allow\n", "READ_MEDIA_IMAGES"))
         assertNull(ShellCommands.parseAppOpMode("No operations.", "READ_MEDIA_IMAGES"))
+        assertEquals("allow", ShellCommands.parseAppOpDefault("No operations.\nDefault mode: allow\n"))
+        assertEquals("default", ShellCommands.parseAppOpDefault("No operations.\r\nDefault mode: default"))
+        assertNull(ShellCommands.parseAppOpDefault("READ_MEDIA_IMAGES: deny"))
     }
 
     @Test

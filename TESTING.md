@@ -88,7 +88,8 @@ the question in the row), INFO, NOT RUN.
 ### Clone
 
 14. Personal copy: under **Clone an app**, **Choose** an app you would like in the Vault that shows photos (a gallery
-    or a file manager): you will use it for the storage checks. Open **C2** › Run: PASS (needs Shevery).
+    or a file manager): you will use it for the storage checks. Best is a file manager that asks for **All files
+    access**: then the storage checks also show what happens to All files. Open **C2** › Run: PASS (needs Shevery).
 
 15. Vault copy: under **Clone an app**, **Choose** another app (one not in the Vault yet). Run **C1**: FAIL is the
     expected answer ("Android allows it only for affiliated profiles"). Run **C3**: Android may ask "Do you want to

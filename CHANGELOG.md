@@ -2,7 +2,7 @@
 
 All notable changes to Liquid Vault, newest first. Each version's section is also its release notes on GitHub.
 
-## 0.1.0 — 2026-11-24
+## 0.1.0 — 2026-11-25
 
 ### Added
 - **Diagnostics** (Phase 0, the proof build). One screen in each copy of the app: the personal copy (your normal

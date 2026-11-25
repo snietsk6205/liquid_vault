@@ -22,9 +22,17 @@ VU=""
 run_check() {
   local user=$1 id=$2 want=$3 secs=$4
   shift 4
-  local from line="" status start=$SECONDS
+  local from line="" status start=$SECONDS try clear
   from=$(wc -l < "$LOG")
-  adb shell am start --user "$user" -n "$PKG/.automation.AutomationActivity" --es run "$id" "$@" > /dev/null 2>&1
+  for try in 1 2; do
+    # A screen started at the same moment as another app screen can stay unstarted behind it (run 8: the Vault copy's
+    # first channel connection came to the front): the second try clears the app's task first.
+    clear=""; [ "$try" = 2 ] && clear="--activity-clear-task"
+    adb shell am start --user "$user" $clear -n "$PKG/.automation.AutomationActivity" --es run "$id" "$@" > /dev/null 2>&1
+    check_started "$user" "$id" "$from" 10 && break
+    [ "$try" = 1 ] && note "check $id (user $user): its screen did not start within 10 s; starting it again"
+  done
+  start=$SECONDS
   while [ $((SECONDS - start)) -lt "$secs" ]; do
     line=$(tail -n +$((from + 1)) "$LOG" | grep -m1 "AUTOMATION u$user $id ") && break
     sleep 0.5
@@ -40,6 +48,16 @@ run_check() {
   echo "     ${line#*AUTOMATION }" | cut -c1-260
   tail -n +$((from + 1)) "$LOG" | grep "AUTOMATION   " | head -14 | sed -E 's/.*AUTOMATION   /         /' | cut -c1-220
   if printf '%s' "$status" | grep -qE "^($want)$"; then pass "$id (user $user): $status"; else fail "$id (user $user): $status, expected $want"; fi
+}
+
+# check_started <user> <id> <from line> <seconds> : AutomationActivity logs "AUTOMATION-START u<user> <id>" when it runs.
+check_started() {
+  local i
+  for i in $(seq 1 $(($4 * 2))); do
+    tail -n +$(($3 + 1)) "$LOG" | grep -qE "AUTOMATION-START u$1 $2([[:space:]]|$)" && return 0
+    sleep 0.5
+  done
+  return 1
 }
 
 vault_user() {
@@ -59,6 +77,24 @@ missing_in_vault() {
         break
       fi
     done
+}
+
+# Launchable apps in the Vault, one package per line.
+vault_launchables() {
+  adb shell cmd package query-activities --components --user "$VU" -a android.intent.action.MAIN -c android.intent.category.LAUNCHER 2>/dev/null \
+    | tr -d '\r' | sed -n 's|^[[:space:]]*\([A-Za-z0-9_.][A-Za-z0-9_.]*\)/.*|\1|p' | sort -u \
+    | grep -v -E "^($PKG|com.android.settings|com.android.documentsui|com.google.android.documentsui|com.google.android.apps.nexuslauncher|com.android.launcher3)$"
+}
+
+# A launchable Vault app that asks for storage or media access (for the F checks), else nothing.
+storage_app_in_vault() {
+  local p
+  vault_launchables | while read -r p; do
+    if adb shell dumpsys package "$p" 2>/dev/null | grep -q -E "android.permission.(READ_MEDIA_IMAGES|READ_EXTERNAL_STORAGE)"; then
+      echo "$p"
+      break
+    fi
+  done
 }
 
 # A slow emulator can show "<app> isn't responding": tap Wait (the skill's advice: detect it, dismiss it, note it).
@@ -95,9 +131,14 @@ if [ "$PART" = "vault" ]; then
   section "2. Create the Vault with Android's setup (V1)"
   from=$(wc -l < "$LOG")
   adb shell am start --user 0 -n "$PKG/.automation.AutomationActivity" --es run V1 > /dev/null 2>&1
-  end=$((SECONDS + 240)); i=0; started=$SECONDS
+  end=$((SECONDS + 240)); i=0; started=$SECONDS; v1_done=""; idle=0
   while [ "$SECONDS" -lt "$end" ]; do
-    if tail -n +$((from + 1)) "$LOG" | grep -q "AUTOMATION u0 V1 "; then break; fi
+    if [ -z "$v1_done" ] && tail -n +$((from + 1)) "$LOG" | grep -q "AUTOMATION u0 V1 "; then v1_done=$SECONDS; idle=0; fi
+    # V1 answers as soon as the Vault exists; a person then finishes Android's last screens, which opens the Vault copy
+    # and connects the channel. Do the same: stop when the channel is connected or no setup screen is left.
+    if [ -n "$v1_done" ]; then
+      if grep -q "kept the permission for content://0@" "$LOG" || [ "$idle" -ge 4 ] || [ $((SECONDS - v1_done)) -gt 60 ]; then break; fi
+    fi
     i=$((i + 1))
     dump "v1-$i"
     dismiss_anr "v1-$i"
@@ -105,7 +146,7 @@ if [ "$PART" = "vault" ]; then
     for t in "Accept & continue" "Accept and continue" "Agree and continue" "Continue" "Next" "Agree" "I agree" "Accept" "Got it" "OK" "Done"; do
       if on_screen "v1-$i" "$t" exact; then tap_text "v1-$i" "$t" exact && tapped=$t; break; fi
     done
-    [ -n "$tapped" ] && echo "     setup screen $i: tapped \"$tapped\""
+    if [ -n "$tapped" ]; then echo "     setup screen $i: tapped \"$tapped\""; idle=0; else idle=$((idle + 1)); fi
     if [ $((i % 10)) -eq 1 ] && [ -z "$tapped" ]; then python3 ci/describe_ui.py "$OUT/v1-$i.xml" 12; fi
     sleep 1.5
   done
@@ -157,6 +198,20 @@ if [ "$PART" = "vault" ]; then
   if [ -n "$CLONE" ]; then
     run_check "$VU" C1 "FAIL|PASS" 30 --es clone "$CLONE"
     run_check "$VU" C4 "PASS|SKIPPED" 40 --es clone "$CLONE"
+  fi
+  FAPP=$(storage_app_in_vault)
+  if [ -n "$FAPP" ]; then
+    note "Vault app for the storage checks: $FAPP (it asks for storage or media access)"
+    run_check "$VU" F1 NEEDS_YOU 30 --es vaultApp "$FAPP"
+    run_check "$VU" F1 PASS 20 --es answer 0
+    run_check "$VU" F2 NEEDS_YOU 30
+    run_check "$VU" F2 "NEEDS_YOU|PASS" 30 --es undo true
+    run_check "$VU" F4 NEEDS_YOU 30
+    run_check "$VU" F5 NEEDS_YOU 30
+    run_check "$VU" F5 "NEEDS_YOU|PASS" 30 --es undo true
+    run_check "$VU" F3 "FAIL|PASS" 30
+  elif [ -n "$CLONE" ]; then
+    note "no Vault app asks for storage or media access: F1 and F4 can only say SKIPPED"
     run_check "$VU" F1 "NEEDS_YOU|SKIPPED" 30 --es vaultApp "$CLONE"
     run_check "$VU" F4 "NEEDS_YOU|SKIPPED" 30 --es vaultApp "$CLONE"
     run_check "$VU" F3 "FAIL|PASS|SKIPPED" 30 --es vaultApp "$CLONE"
@@ -241,6 +296,7 @@ if [ "$PART" = "shell" ]; then
   VU=$(vault_user)
   [ -n "$VU" ] && note "the Vault is user $VU" || { fail "a work profile exists after V2"; finish_smoke "$PART"; }
   wait_log "Vault setup ran" 60 && pass "the Vault copy ran its setup" || fail "the Vault copy ran its setup"
+  wait_log "kept the permission for content://0@" 60 && pass "the Vault copy holds the personal copy's channel permission" || note "the channel did not connect by itself"
   run_check "$VU" V3 PASS 30
   run_check 0 V3 PASS 30
   run_check "$VU" L0 "PASS|FAIL" 40
@@ -252,6 +308,17 @@ if [ "$PART" = "shell" ]; then
 
   section "4. Clone and app-ops with the shell"
   CLONE=$(missing_in_vault)
+  if [ -z "$CLONE" ]; then
+    # Every launchable app is already in the Vault (on the emulator the new profile gets all of them): take one out of
+    # the Vault so the shell can clone it back.
+    # Prefer one that asks for storage or media access, so F6/F7 change app-ops it uses.
+    CLONE=$(storage_app_in_vault)
+    [ -z "$CLONE" ] && CLONE=$(vault_launchables | head -1)
+    if [ -n "$CLONE" ]; then
+      note "every app is already in the Vault: taking $CLONE out of it first"
+      adb shell pm uninstall --user "$VU" "$CLONE" | tr -d '\r' | tail -1
+    fi
+  fi
   note "app to clone: ${CLONE:-none found}"
   if [ -n "$CLONE" ]; then
     run_check 0 C2 PASS 60 --es clone "$CLONE"

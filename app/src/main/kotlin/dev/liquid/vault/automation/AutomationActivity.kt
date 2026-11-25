@@ -53,6 +53,7 @@ class AutomationActivity : ComponentActivity(), Host {
             finish()
             return
         }
+        Log.i(VaultApp.LOG_TAG, "AUTOMATION-START u${Env.myUserId} $id")
         // adb cannot pass spaces easily: "DESTROY_VAULT" stands for "DESTROY VAULT".
         val map = extras.keySet().filter { extras.getString(it) != null }.associateWith { k -> extras.getString(k)!!.let { if (k == "confirm") it.replace('_', ' ') else it } }
         lifecycleScope.launch {

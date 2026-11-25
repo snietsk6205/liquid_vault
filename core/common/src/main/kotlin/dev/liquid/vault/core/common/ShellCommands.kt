@@ -129,6 +129,15 @@ object ShellCommands {
         return line.removePrefix("$op:").trim().substringBefore(';').trim().ifEmpty { null }
     }
 
+    /**
+     * After "No operations." `appops get` prints "Default mode: allow": the mode the op has without an entry. Setting an
+     * op to its default mode removes the entry (AOSP `AppOpsService.setMode` prunes it), so "allow" reads back as
+     * "No operations." for the storage and media ops (emulator run 8). The default mode, or null.
+     */
+    fun parseAppOpDefault(output: String): String? =
+        output.lineSequence().map { it.trim() }.firstOrNull { it.startsWith("Default mode:") }
+            ?.removePrefix("Default mode:")?.trim()?.ifEmpty { null }
+
     /** `id` prints "uid=2000(shell) gid=…": the uid number. */
     fun parseUid(output: String): Int? = Regex("uid=(\\d+)").find(output)?.groupValues?.get(1)?.toIntOrNull()
 }

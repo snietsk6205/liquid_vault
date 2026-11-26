@@ -79,9 +79,10 @@ run_act() {
   if printf '%s' "$status" | grep -qE "^($want)$"; then pass "act $act $* (user $user): $status"; else fail "act $act $* (user $user): $status, expected $want"; fi
 }
 
-# pkg_flag <user> <pkg> <flag> : true/false for hidden, suspended or installed, from dumpsys package's line for the user.
+# pkg_flag <user> <pkg> <flag> : the value of hidden, suspended, installed (true/false) or enabled (0 default,
+# 1 on, 3 turned off by the user) on dumpsys package's line for the user.
 pkg_flag() {
-  adb shell dumpsys package "$2" 2>/dev/null | tr -d '\r' | grep -m1 -E "^ +User $1: " | grep -oE "$3=(true|false)" | head -1 | cut -d= -f2
+  adb shell dumpsys package "$2" 2>/dev/null | tr -d '\r' | grep -m1 -E "^ +User $1: " | grep -oE " $3=[^ ]+" | head -1 | cut -d= -f2
 }
 
 # expect_flag <user> <pkg> <flag> <value> <what> : checks what Android itself says about the app.
@@ -448,10 +449,15 @@ if [ "$PART" = "shell" ]; then
   fi
 
   section "4b. Phase 1: personal apps and copying, with the shell"
+  # The shell may not `pm hide` (it lacks MANAGE_USERS, run 15): a personal app is frozen by turning it off.
   run_act 0 personal OK 60 --es do FREEZE --es pkg com.android.camera2
-  expect_flag 0 com.android.camera2 hidden true "the shell freezes a personal app"
+  expect_flag 0 com.android.camera2 enabled 3 "the shell freezes (turns off) a personal app"
+  run_act 0 personal-apps OK 30 --es pkg com.android.camera2
+  if printf '%s' "$LAST_ACT" | grep -q "frozen=true"; then pass "the Apps list shows it as frozen"; else fail "the Apps list shows it as frozen"; fi
   run_act 0 personal OK 60 --es do UNFREEZE --es pkg com.android.camera2
-  expect_flag 0 com.android.camera2 hidden false "and unfreezes it"
+  expect_flag 0 com.android.camera2 enabled 1 "and unfreezes it"
+  run_act 0 personal-apps OK 30 --es pkg com.android.camera2
+  if printf '%s' "$LAST_ACT" | grep -q "frozen=false"; then pass "the Apps list shows it back"; else fail "the Apps list shows it back"; fi
   run_act 0 personal OK 60 --es do SUSPEND --es pkg com.android.camera2
   expect_flag 0 com.android.camera2 suspended true "the shell suspends a personal app"
   run_act 0 personal OK 60 --es do UNSUSPEND --es pkg com.android.camera2

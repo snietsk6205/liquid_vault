@@ -74,11 +74,17 @@ class AppsAndQueueTest {
 
     @Test
     fun actionsBecomeShellCommandsAndReadTheAnswer() {
+        // The shell may not `pm hide` (MANAGE_USERS, CI run 15): a personal app is frozen by turning it off.
         val a = q(1, ShellAction.FREEZE)
-        assertEquals(listOf("pm", "hide", "--user", "0", "org.mozilla.firefox"), ActionQueue.command(a))
-        assertTrue(ActionQueue.succeeded(a, "Package org.mozilla.firefox new hidden state: true"))
-        assertFalse(ActionQueue.succeeded(a, "Package org.mozilla.firefox new hidden state: false"))
-        assertFalse(ActionQueue.succeeded(a, "Error: java.lang.SecurityException"))
+        assertEquals(listOf("pm", "disable-user", "--user", "0", "org.mozilla.firefox"), ActionQueue.command(a))
+        assertTrue(ActionQueue.succeeded(a, "Package org.mozilla.firefox new state: disabled-user"))
+        assertFalse(ActionQueue.succeeded(a, "Package org.mozilla.firefox new state: enabled"))
+        assertFalse(ActionQueue.succeeded(a, "Exception occurred while executing 'disable-user':\njava.lang.SecurityException: Cannot disable a protected package: org.mozilla.firefox"))
+        val u = q(3, ShellAction.UNFREEZE)
+        assertEquals(listOf("pm", "enable", "--user", "0", "org.mozilla.firefox"), ActionQueue.command(u))
+        assertTrue(ActionQueue.succeeded(u, "Package org.mozilla.firefox new state: enabled"))
+        assertTrue(ActionQueue.succeeded(u, "Package org.mozilla.firefox new state: default"))
+        assertFalse(ActionQueue.succeeded(u, "Package org.mozilla.firefox new state: disabled-user"))
         val s = q(2, ShellAction.UNSUSPEND)
         assertEquals(listOf("pm", "unsuspend", "--user", "0", "org.mozilla.firefox"), ActionQueue.command(s))
         assertTrue(ActionQueue.succeeded(s, "Package org.mozilla.firefox new suspended state: false"))
@@ -91,8 +97,28 @@ class AppsAndQueueTest {
         assertThrows(IllegalArgumentException::class.java) { ShellCommands.uninstallForUser(0, "app.komikku") }
         assertTrue(ShellCommands.uninstallSucceeded("Success\n"))
         assertFalse(ShellCommands.uninstallSucceeded("Failure [DELETE_FAILED_INTERNAL_ERROR]"))
-        assertNull(ShellCommands.parseHidden("Package other.app new hidden state: true", "app.komikku"))
+        assertNull(ShellCommands.parseEnabledState("Package other.app new state: disabled-user", "app.komikku"))
+        assertEquals("disabled-until-used", ShellCommands.parseEnabledState("Package app.komikku new state: disabled-until-used", "app.komikku"))
         assertEquals(true, ShellCommands.parseSuspended("Package app.komikku new suspended state: true", "app.komikku"))
+    }
+
+    @Test
+    fun aFailedShellAnswerKeepsTheReason() {
+        // What the shell said in CI run 15 when it was asked to `pm hide` (trimmed stack trace).
+        val run15 = """
+            Exception occurred while executing 'hide':
+            java.lang.SecurityException: Neither user 2000 nor current process has android.permission.MANAGE_USERS.
+            	at android.app.ContextImpl.enforceCallingOrSelfPermission(ContextImpl.java:2280)
+            	at com.android.server.pm.PackageManagerService${'$'}IPackageManagerImpl.setApplicationHiddenSettingAsUser(PackageManagerService.java:5915)
+        """.trimIndent()
+        assertEquals(
+            "Exception occurred while executing 'hide': java.lang.SecurityException: Neither user 2000 nor current process has android.permission.MANAGE_USERS.",
+            ShellCommands.errorSummary(run15),
+        )
+        assertEquals("Error: package app.x not found", ShellCommands.errorSummary("\nError: package app.x not found\n"))
+        assertEquals("Failure [not installed for 10]", ShellCommands.errorSummary("Failure [not installed for 10]"))
+        assertNull(ShellCommands.errorSummary("  \n "))
+        assertTrue(ShellCommands.errorSummary("x".repeat(500))!!.length <= 240)
     }
 
     @Test

@@ -85,13 +85,17 @@ object ShellCommands {
     /** Every user's facts, restrictions included (the shell may read it even when a profile blocks the shell). */
     fun dumpsysUser(): List<String> = listOf("dumpsys", "user")
 
-    // Phase 1: what the shell does to apps (D45). `pm` prints "Package <pkg> new hidden state: true" and
-    // "Package <pkg> new suspended state: true" (AOSP PackageManagerShellCommand).
+    // Phase 1: what the shell does to apps (D45). `pm` prints "Package <pkg> new state: disabled-user" and
+    // "Package <pkg> new suspended state: true" (AOSP PackageManagerShellCommand). The shell cannot `pm hide`: Android
+    // asks for MANAGE_USERS there, which the shell does not hold (CI run 15), so a personal app is frozen by turning
+    // it off for the user instead, which the shell may do to whole apps (CHANGE_COMPONENT_ENABLED_STATE).
 
-    /** Freeze: the app is hidden (gone from launchers, cannot run, its data kept). */
-    fun hide(userId: Int, packageName: String): List<String> = listOf("pm", "hide", "--user", user(userId), pkg(packageName))
+    /** Freeze: the app is turned off for the user (gone from launchers, cannot run, its data kept). */
+    fun disableUser(userId: Int, packageName: String): List<String> =
+        listOf("pm", "disable-user", "--user", user(userId), pkg(packageName))
 
-    fun unhide(userId: Int, packageName: String): List<String> = listOf("pm", "unhide", "--user", user(userId), pkg(packageName))
+    /** Unfreeze: the app is turned on again. */
+    fun enable(userId: Int, packageName: String): List<String> = listOf("pm", "enable", "--user", user(userId), pkg(packageName))
 
     /** Suspend: the icon stays, greyed; the app cannot open. */
     fun suspend(userId: Int, packageName: String): List<String> = listOf("pm", "suspend", "--user", user(userId), pkg(packageName))
@@ -104,13 +108,31 @@ object ShellCommands {
         return listOf("pm", "uninstall", "--user", user(userId), pkg(packageName))
     }
 
-    fun parseHidden(output: String, packageName: String): Boolean? =
-        Regex("Package ${Regex.escape(packageName)} new hidden state: (true|false)").find(output)?.groupValues?.get(1)?.toBooleanStrict()
+    /** The state `pm enable` / `pm disable-user` reports: "enabled", "default", "disabled-user", … */
+    fun parseEnabledState(output: String, packageName: String): String? =
+        Regex("Package ${Regex.escape(packageName)} new state: ([a-z-]+)").find(output)?.groupValues?.get(1)
 
     fun parseSuspended(output: String, packageName: String): Boolean? =
         Regex("Package ${Regex.escape(packageName)} new suspended state: (true|false)").find(output)?.groupValues?.get(1)?.toBooleanStrict()
 
     fun uninstallSucceeded(output: String): Boolean = output.lineSequence().any { it.trim() == "Success" }
+
+    /**
+     * The part of a failed `pm` answer worth showing: its first line plus the exception's own message when there is
+     * one ("Exception occurred while executing 'hide': java.lang.SecurityException: Neither user 2000 nor current
+     * process has android.permission.MANAGE_USERS."), never the stack trace. Null when the shell said nothing.
+     */
+    fun errorSummary(output: String, max: Int = 240): String? {
+        val lines = output.lineSequence().map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith("at ") }.toList()
+        if (lines.isEmpty()) return null
+        val reason = lines.firstOrNull { Regex("^[\\w.$]+(Exception|Error)(: |$)").containsMatchIn(it) }
+        val text = when {
+            reason == null -> lines.take(2).joinToString(" ")
+            reason == lines.first() -> reason
+            else -> lines.first() + " " + reason
+        }
+        return text.take(max)
+    }
 
     /** For the log: the command as it would be typed, quoting what needs it. */
     fun render(command: List<String>): String = command.joinToString(" ") { arg ->

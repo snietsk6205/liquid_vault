@@ -48,8 +48,6 @@ object Prefs {
     const val LAST_ACTION_OK = "last_action_ok"
     const val LAST_ACTION_TEXT = "last_action_text"
     const val LAST_ACTION_AT = "last_action_at"
-    /** Personal copy: personal apps this app froze (Android lists frozen apps nowhere else). */
-    const val FROZEN_PERSONAL = "frozen_personal"
     /** Personal copy, options (D50): at boot, turn wireless debugging on; at boot, remind to start Shevery. */
     const val OPT_BOOT_WIRELESS_DEBUGGING = "opt_boot_wireless_debugging"
     const val OPT_BOOT_REMIND_SHELL = "opt_boot_remind_shell"

@@ -64,16 +64,16 @@ object ActionQueue {
     }
 
     fun command(a: QueuedAction): List<String> = when (a.action) {
-        ShellAction.FREEZE -> ShellCommands.hide(a.userId, a.pkg)
-        ShellAction.UNFREEZE -> ShellCommands.unhide(a.userId, a.pkg)
+        ShellAction.FREEZE -> ShellCommands.disableUser(a.userId, a.pkg)
+        ShellAction.UNFREEZE -> ShellCommands.enable(a.userId, a.pkg)
         ShellAction.SUSPEND -> ShellCommands.suspend(a.userId, a.pkg)
         ShellAction.UNSUSPEND -> ShellCommands.unsuspend(a.userId, a.pkg)
     }
 
     /** Whether the shell's answer says the action took effect. */
     fun succeeded(a: QueuedAction, output: String): Boolean = when (a.action) {
-        ShellAction.FREEZE -> ShellCommands.parseHidden(output, a.pkg) == true
-        ShellAction.UNFREEZE -> ShellCommands.parseHidden(output, a.pkg) == false
+        ShellAction.FREEZE -> ShellCommands.parseEnabledState(output, a.pkg) == "disabled-user"
+        ShellAction.UNFREEZE -> ShellCommands.parseEnabledState(output, a.pkg) in setOf("enabled", "default")
         ShellAction.SUSPEND -> ShellCommands.parseSuspended(output, a.pkg) == true
         ShellAction.UNSUSPEND -> ShellCommands.parseSuspended(output, a.pkg) == false
     }

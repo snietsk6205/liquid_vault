@@ -25,6 +25,7 @@ import dev.liquid.vault.core.common.ShellAction
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import dev.liquid.vault.control.PersonalApps
 import kotlinx.coroutines.withContext
 
 /**
@@ -106,6 +107,10 @@ class AutomationActivity : ComponentActivity(), Host {
                         Outcome(true, "${apps.size} apps" + (pkg?.let { " · $it: " + (one?.let { a -> "frozen=${a.frozen} suspended=${a.suspended}" } ?: "not listed") } ?: ""))
                     } ?: Outcome(false, "the Vault copy did not answer")
                     "vault-app" -> VaultControl.appAction(what ?: "", pkg ?: "")
+                    "personal-apps" -> withContext(Dispatchers.IO) { PersonalApps.list(this@AutomationActivity) }.let { apps ->
+                        val one = pkg?.let { p -> apps.firstOrNull { it.pkg == p } }
+                        Outcome(true, "${apps.size} apps" + (pkg?.let { " · $it: " + (one?.let { a -> "frozen=${a.frozen} suspended=${a.suspended}" } ?: "not listed") } ?: ""))
+                    }
                     "personal" -> {
                         val action = ShellAction.valueOf(what ?: "")
                         val app = AppRecord(pkg ?: "", pkg ?: "", Place.PERSONAL)

@@ -1,6 +1,7 @@
 package dev.liquid.vault.control
 
 import android.content.Context
+import android.content.Intent
 import android.content.pm.ApplicationInfo
 import android.content.pm.LauncherApps
 import android.content.pm.PackageManager
@@ -12,9 +13,9 @@ import dev.liquid.vault.core.common.Place
 import dev.liquid.vault.core.common.QueueFile
 import dev.liquid.vault.core.common.QueuedAction
 import dev.liquid.vault.core.common.ShellAction
+import dev.liquid.vault.core.common.ShellCommands
 import dev.liquid.vault.core.common.VaultJson
 import dev.liquid.vault.core.common.asEvidence
-import dev.liquid.vault.diag.Prefs
 import dev.liquid.vault.shell.Shell
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -27,8 +28,10 @@ import java.io.File
 /** Your normal apps, as the personal copy sees them (Phase 1). */
 object PersonalApps {
     /**
-     * The apps a launcher shows on the personal side, plus the ones Liquid Vault froze (Android lists frozen apps
-     * nowhere else). Suspended apps stay in launchers, greyed, so they come with the others.
+     * The apps a launcher shows on the personal side, plus the frozen ones: a frozen personal app is turned off for
+     * you (`pm disable-user`, D45), so launchers drop it and it is found by asking Android for launcher entries,
+     * turned-off ones included. Suspended apps stay in launchers, greyed, so they come with the others. Frozen is
+     * what Android says, whoever froze the app (Liquid Vault, or Settings' Disable button).
      */
     fun list(context: Context): List<AppRecord> {
         val pm = context.packageManager
@@ -42,24 +45,22 @@ object PersonalApps {
                 AppRecord(info.packageName, a.label.toString(), Place.PERSONAL, system = info.flags and ApplicationInfo.FLAG_SYSTEM != 0, suspended = info.flags and ApplicationInfo.FLAG_SUSPENDED != 0)
             }
         val shown = visible.map { it.pkg }.toSet()
-        val frozen = frozenByUs(context).filter { it !in shown }.mapNotNull { pkg ->
-            val info = runCatching { pm.getApplicationInfo(pkg, PackageManager.MATCH_UNINSTALLED_PACKAGES) }.getOrNull() ?: return@mapNotNull null
-            if (info.flags and ApplicationInfo.FLAG_INSTALLED == 0) return@mapNotNull null // removed meanwhile
-            if (isVisible(pm, pkg)) return@mapNotNull null // unfrozen by someone else: it is in the launcher list again
-            AppRecord(pkg, pm.getApplicationLabel(info).toString(), Place.PERSONAL, system = info.flags and ApplicationInfo.FLAG_SYSTEM != 0, frozen = true)
-        }
+        val launcher = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        val entries = runCatching { pm.queryIntentActivities(launcher, PackageManager.MATCH_DISABLED_COMPONENTS) }.getOrDefault(emptyList())
+        val frozen = entries.map { it.activityInfo }
+            .filter { it.packageName != own && it.packageName !in shown }
+            .distinctBy { it.packageName }
+            .filter { isFrozen(pm, it.packageName) }
+            .map { a ->
+                val info = a.applicationInfo
+                AppRecord(a.packageName, a.loadLabel(pm).toString(), Place.PERSONAL, system = info.flags and ApplicationInfo.FLAG_SYSTEM != 0, frozen = true, suspended = info.flags and ApplicationInfo.FLAG_SUSPENDED != 0)
+            }
         return visible + frozen
     }
 
-    /** A frozen (hidden) app is installed but not visible without MATCH_UNINSTALLED_PACKAGES. */
-    private fun isVisible(pm: PackageManager, pkg: String): Boolean = runCatching { pm.getApplicationInfo(pkg, 0); true }.getOrDefault(false)
-
-    fun frozenByUs(context: Context): Set<String> = Prefs.of(context).getStringSet(Prefs.FROZEN_PERSONAL, emptySet())?.toSet() ?: emptySet()
-
-    fun noteFrozen(context: Context, pkg: String, frozen: Boolean) {
-        val now = frozenByUs(context).let { if (frozen) it + pkg else it - pkg }
-        Prefs.of(context).edit().putStringSet(Prefs.FROZEN_PERSONAL, now).apply()
-    }
+    /** Turned off by the user (Settings' Disable, or `pm disable-user`): the state the shell can undo. */
+    private fun isFrozen(pm: PackageManager, pkg: String): Boolean =
+        runCatching { pm.getApplicationEnabledSetting(pkg) == PackageManager.COMPONENT_ENABLED_STATE_DISABLED_USER }.getOrDefault(false)
 }
 
 /**
@@ -134,15 +135,10 @@ object ActionQueueStore {
                 val output = result.getOrNull()?.output ?: ""
                 val ok = result.isSuccess && ActionQueue.succeeded(a, output)
                 if (ok) {
-                    when (a.action) {
-                        ShellAction.FREEZE -> PersonalApps.noteFrozen(context, a.pkg, true)
-                        ShellAction.UNFREEZE -> PersonalApps.noteFrozen(context, a.pkg, false)
-                        else -> {}
-                    }
                     save(context, _queue.value.filterNot { it.id == a.id })
                     DebugLog.event("Queue", "${a.title}: done by the shell")
                 } else {
-                    val why = result.exceptionOrNull()?.asEvidence() ?: output.lineSequence().firstOrNull { it.isNotBlank() }?.take(160) ?: "no answer"
+                    val why = result.exceptionOrNull()?.asEvidence() ?: ShellCommands.errorSummary(output) ?: "no answer"
                     save(context, ActionQueue.failed(_queue.value, a, why))
                     DebugLog.error("Queue", "${a.title}: the shell said \"$why\"")
                 }

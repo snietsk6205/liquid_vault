@@ -109,14 +109,15 @@ vault apps seems hard; in the future phases do you plan on making it better?"
 | 2 | 0.1.1 phone results | Recorded | D37–D41: "no debugging features" gone by itself; silent clone works; F1/F2 PASS with Aves; F4/F5 really passed (verdict fixed); F6/F7 retired; clearer test steps. |
 | 3 | Med's questions | Answered | F6/F7 not needed; the storage section's results explained; Phase 1 replaces Diagnostics with real screens. |
 | 4 | Phase 1 | Built | Home, Apps, the Vault's lock, VPN, Settings, What's new; VaultService + VaultActionActivity; waiting-actions queue; boot reminders; Vault copy icon hidden (Q4). 41 JVM unit tests. |
-| 5 | Phase 1 emulator test | See CI | AutomationActivity actions checked with `dumpsys package`. |
+| 5 | Phase 1 emulator test | Fixed, re-run | Run 15: the Vault part passed; the shell part showed the shell may not `pm hide` (MANAGE_USERS). Personal Freeze now turns the app off (`pm disable-user`, D54); the frozen state is read from Android, so apps turned off in Settings show as Frozen too. 43 JVM unit tests. |
 | 6 | Release 0.2.0 | See below | |
 
 **Known limits**
 - Not tested on stock Android in CI: the installer-session copy and Android's uninstall question (they need taps on
   Android's dialogs), the Vault's own lock (it needs a PIN typed into Android's screen), VPN with a real VPN app.
   These are in TESTING § Phase 1.
-- Personal apps frozen by another app than Liquid Vault are not listed (Android lists frozen apps nowhere).
+- A personal app Android protects, or one another system app turned off, cannot be frozen or unfrozen by the shell; the
+  shell's reason is shown.
 - B3 (an app refused by the bridge) is still not run on the phone; it belongs to Phase 2.
 
 **Questions for Med**: Q5 (let the shell into the Vault: moot while the phone does not set "no debugging features"),

@@ -14,7 +14,8 @@ All notable changes to Liquid Vault, newest first. Each version's section is als
   - Vault apps: **Open**, **Freeze** (gone from your apps until you unfreeze it; its data stays), **Suspend** (its
     icon stays grey and it cannot open), **App info**, **Remove from the Vault** (you type REMOVE first).
   - Personal apps: **Copy into the Vault** (silently with the shell when it can reach the Vault; built-in apps are
-    switched on without copying; otherwise Android asks you once), **Freeze**, **Suspend**.
+    switched on without copying; otherwise Android asks you once), **Freeze** (the shell turns the app off: it
+    leaves your apps and cannot run, its data stays; Android's Settings lists it as disabled), **Suspend**.
 - **Actions that wait for the shell**: freezing or suspending a personal app needs Shevery. When it is off, the
   action waits (Home shows it) and happens by itself as soon as Shevery starts. Doing the opposite meanwhile cancels it.
 - **The Vault's lock**: give the Vault a lock of its own (Android's screen opens in the Vault), and **Lock now**.

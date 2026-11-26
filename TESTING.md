@@ -50,7 +50,8 @@ Two words used below: **Freeze** = the app disappears from your apps and cannot 
 11. The waiting list (the shell off): open Shevery and stop it. In Liquid Vault, Personal tab › that same small app ›
     **Freeze**. Expect "Freeze … waits for the shell". Back on **Home**, the shell part lists it ("Waits for the
     shell"). Start Shevery again, then swipe Liquid Vault away from recents and open it: the list is empty and the
-    app is gone from your normal apps. Apps › Personal › the app (it says **Frozen**) › **Unfreeze**.
+    app is gone from your normal apps (Android's Settings › Apps lists it as disabled: that is how the shell freezes a
+    personal app). Apps › Personal › the app (it says **Frozen**) › **Unfreeze**: it is back in your normal apps.
 
 ### Copying without the shell
 

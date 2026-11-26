@@ -2,6 +2,31 @@
 
 All notable changes to Liquid Vault, newest first. Each version's section is also its release notes on GitHub.
 
+## 0.3.0 — 2026-11-26
+
+*Phase 2: access rules. You decide, app by app and side by side, which files each app may reach.*
+
+### Added
+- **Access rules** (Home › Access rules). For each app, on each side:
+  - **its own files** on its side: *Android decides*, *No files*, *Photos and media* or *All files* (in the Vault set
+    by Liquid Vault as the Vault's owner; on the personal side through the shell, waiting for it when it is off);
+  - **the other side's files**: *None*, *Folders* you choose, or *All*, read-only or **Can change files**. Apps reach
+    them only through the **Liquid Vault** place of the file picker: personal apps see *Vault files*, Vault apps see
+    *Personal files*, each just what its rule allows.
+  - **Presets** in one tap: No files, Media only, Photos across, File manager, Android decides.
+- **Access log**: every use of the bridge, allowed or refused, from both sides, with a *Refused* filter.
+- **Back up** the rules to a file and **restore** them (you type REPLACE first).
+
+### Fixed
+- **Copying an app you downloaded into the Vault without the shell** (0.2.0, step 12: "Package … not found for user 0").
+- The report's debug log keeps what happened before a restart, and errors stand out with "!".
+
+### Changed
+- The file picker's Work tab is closed for good: it showed personal apps every Vault file, past any rule. Diagnostics
+  B1 (bridge A) is retired.
+- The Vault's setup goes to version 3 by itself when the Vault copy starts (the Work tab closed; Liquid Vault may read
+  the Vault's files, to share them through the bridge).
+
 ## 0.2.0 — 2026-11-26
 
 *Phase 1: the Vault's core. Liquid Vault opens on a real Home screen; Diagnostics moved under More.*

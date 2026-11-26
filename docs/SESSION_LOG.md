@@ -124,3 +124,32 @@ vault apps seems hard; in the future phases do you plan on making it better?"
 Q6 (what "hide" means).
 
 **Exact next step**: Med tests 0.2.0 (`TESTING.md` § Phase 1) and sends the report. Then Phase 2 (access rules).
+
+### Session 3 — 2026-11-27 · Phase 1 report, then Phase 2 (release 0.3.0)
+
+**Asked**: Med sent the 0.2.0 phone report (both copies): "all of them worked except for 12 … it showed an error"
+(screenshot: "Not done: could not start the copy: NameNotFoundException: Package com.chethan616.clearpdf not found for
+user 0"), and "continue". Med had merged the branch into main (PR #3) after 0.2.0.
+
+| # | Point | State | What |
+|---|---|---|---|
+| 1 | Phase 1 gate | Passed | Every step but 12 (D61). |
+| 2 | Step 12 | Fixed | The Vault copy cannot look up an app that is only on the personal side (AOSP: system apps only; LauncherApps refuses profiles). The personal copy now names the APK files (D55). Emulator: a downloaded test app copied without the shell, Install tapped, installed (run 20). |
+| 3 | Reports | Better | The debug log survives restarts and marks errors "!" (D56): the 0.2.0 report had lost step 12's error. |
+| 4 | CI | Note | Run 19 was held by GitHub ("action required", no jobs) when a push changed the workflow file; the workflow stays as on main and the test app is built with the SDK's tools instead (D60). The force push to restart the branch from main was refused by the session's safety check, so work continues on top of the merged history (a pull request still shows only the new commits). |
+| 5 | Phase 2 | Built | Rules (own files; the other side's files: none / folders / all, read-only or read-write; presets), the bridge both ways, access log, backup and restore (D57–D60). Locked folder moved to Phase 3 (D62). |
+| 6 | Phase 2 emulator test | See CI | A test app with code lists, reads and writes through lent folders both ways, refused without a rule, outside its folders and when read-only; both logs; own files for a Vault app (owner) and a personal app (shell). |
+| 7 | Release 0.3.0 | Release commit | One release this session. |
+
+**Known limits**
+- On the personal side, Liquid Vault needs "All files access" once (Android's setting or the shell) before Vault apps can
+  reach personal files.
+- The picker shows what at least one app of its side may reach (Android does not say which app opened it); the app is
+  checked when it opens what was picked. The Vault's test folder stays visible in the personal picker for B2/B3.
+- Saving through the picker (ACTION_CREATE_DOCUMENT) creates the empty file before the app writes into it; if the app
+  may not write there, an empty file can stay.
+
+**Questions for Med**: Q6 (what "hide" means) is still open; Q5 stays moot while the Vault has no "no debugging
+features".
+
+**Exact next step**: Med tests 0.3.0 (`TESTING.md` § Phase 2) and sends the report. Then Phase 3 (file manager).

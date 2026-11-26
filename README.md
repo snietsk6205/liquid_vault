@@ -5,10 +5,12 @@ normal apps cannot see — and gives full control over both sides: access rules 
 clone / freeze / hide / pause apps, per-side VPN, later a file manager and integration with Liquid Launcher. Built for
 one phone (HONOR 90 Lite, MagicOS, no root) to replace Insular.
 
-**Status: Phase 1 (Vault core, release 0.2.0).** Liquid Vault opens on Home: the Vault (pause, resume, its own lock),
-the apps of both sides (copy into the Vault, freeze, suspend, remove), VPN for the Vault, the shell's state and the
-actions waiting for it. Diagnostics, Phase 0's proof checks, is under More. See `docs/PLAN.md` for the phases and
-`TESTING.md` for the steps on the phone.
+**Status: Phase 2 (access rules, release 0.3.0).** Liquid Vault opens on Home: the Vault (pause, resume, its own lock),
+the apps of both sides (copy into the Vault, freeze, suspend, remove), and the access rules: for each app, its own
+files and how far it reaches into the other side's files through the "Liquid Vault" place of the file picker (folders
+or all, read-only or read-write), with an access log and a backup. VPN for the Vault, the shell's state and the actions
+waiting for it are there too; Diagnostics, Phase 0's proof checks, is under More. See `docs/PLAN.md` for the phases
+and `TESTING.md` for the steps on the phone.
 
 | Read | For |
 |---|---|

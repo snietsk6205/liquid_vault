@@ -9,8 +9,8 @@ what Med tests on the phone is in `TESTING.md`.*
 | Phase | State |
 |---|---|
 | 0. Proof (Diagnostics) | **Done.** Phone tests of 0.1.0 and 0.1.1 (results: `DECISIONS.md` D25–D41). Still open, not blocking: B3 (refused app), D1/V2 (destroy, shell create: in Phase 1's test), the cause of "no debugging features" coming and going (D37). |
-| 1. Vault core | **Built** (release 0.2.0): Home, Apps (both sides), the Vault's lock, VPN, settings, the waiting-actions queue, boot reminders. **Gate:** Med's test (`TESTING.md` § Phase 1). Decisions D42–D54, questions Q5–Q6. |
-| 2. Access rules | Not started |
+| 1. Vault core | **Done.** Phone test of 0.2.0: every step passed but step 12, copying a downloaded app without the shell (D61), fixed in 0.3.0 (D55). Decisions D42–D54, questions Q5–Q6. |
+| 2. Access rules | **Built** (release 0.3.0): the rules screen (own files; the other side's files: none / folders / all, read-only or read-write; presets), the bridge both ways, the access log, backup and restore. **Gate:** Med's test (`TESTING.md` § Phase 2). Decisions D55–D62. |
 | 3. File manager | Not started |
 | 4. Design | Not started (Phase 0 already uses the kit's settings look) |
 | 5. Launcher integration | Not started |
@@ -155,10 +155,17 @@ bridge (the mechanism chosen in Phase 0: bridge B, which keeps the Work tab clos
 "All files" per app per side (app-op), access log screen, rules
 backup/export. Optional Locked folder (inside the personal copy's private data).
 
+**Built in 0.3.0** (D55–D62): for each app on each side, *its own files* (Android decides / No files / Photos and media /
+All files: owner policy and app-op in the Vault, the shell on the personal side) and *the other side's files* through
+the bridge (none / chosen folders / all, read-only or read-write), five presets; the bridge both ways (personal apps
+see "Liquid Vault · Vault files", Vault apps "Liquid Vault · Personal files"), each call decided by calling package and
+logged; the access log of both copies; backup and restore (typed REPLACE). The Work tab is closed for good (bridge A
+and B1 retired, D60). The Locked folder moves to Phase 3 (D62).
+
 ## Phase 3 — File manager
 
 Material Files' file-system core (GPL-3.0); Personal / Vault / Locked folder; copy and move across sides through the
-bridge; shell mode for raw paths.
+bridge; shell mode for raw paths. The Locked folder (brief decision 5, from Phase 2, D62).
 
 ## Phase 4 — Design
 

@@ -132,12 +132,12 @@ fun AppsScreen(host: Host, start: Place, tick: Int, onBack: () -> Unit) {
 }
 
 @Composable
-private fun Note(text: String) {
+internal fun Note(text: String) {
     Text(text, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 32.dp, vertical = 12.dp))
 }
 
 @Composable
-private fun AppIcon(app: AppRecord, size: androidx.compose.ui.unit.Dp) {
+internal fun AppIcon(app: AppRecord, size: androidx.compose.ui.unit.Dp) {
     val context = LocalContext.current
     val px = with(LocalDensity.current) { size.roundToPx() }
     val icon by produceState<ImageBitmap?>(null, app.pkg, app.place) { value = AppIcons.get(context, app, px) }

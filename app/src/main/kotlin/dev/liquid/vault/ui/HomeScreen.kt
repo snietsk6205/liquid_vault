@@ -215,6 +215,14 @@ fun HomeScreen(host: Host, tick: Int, open: (Screen) -> Unit, onClose: () -> Uni
                         value = s.personalApps.toString(),
                         onClick = { open(Screen.APPS_PERSONAL) },
                     )
+                    KitNavRow(
+                        title = "Access rules",
+                        summary = "Which files each app may reach, on its side and across",
+                        icon = LauncherIcons.Lock,
+                        accent = VaultPurple,
+                        value = dev.liquid.vault.rules.RulesStore.rules(context).size.let { if (it == 0) "none yet" else "$it" },
+                        onClick = { open(Screen.RULES) },
+                    )
                 }
             }
 

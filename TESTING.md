@@ -2,7 +2,85 @@
 
 One section per phase gate. Do the steps in order; each says what you should see. Commands are for your Linux PC
 (fish shell) with the phone on USB (or wireless) debugging; everything else is taps. When you are done, send me the
-reports (step 30) and anything that surprised you (a screenshot helps).
+report (the last step of each section) and anything that surprised you (a screenshot helps).
+
+## Phase 2 — Access rules (release 0.3.0)
+
+About 30 minutes. Keep your Vault as it is. Each step says what to tap and what you should see; if something looks
+different, note the step number and what you saw.
+
+Words used below: **the picker** = Android's "choose a file" screen that apps open (for example Gmail's *Attach
+file*); its menu (☰ at the top left) lists places such as *Downloads*, *Images* and now **Liquid Vault**. **A rule**
+= what one app may reach: its own files on its side, and the other side's files through Liquid Vault.
+
+### Install
+
+1. Install 0.3.0 over 0.2.0 (the APK from the release page):
+
+   ```fish
+   adb install -r ~/Downloads/LiquidVault-0.3.0-build*.apk
+   ```
+
+2. Open **Liquid Vault**. On Home, under **Apps**, there is a new row **Access rules** ("none yet").
+
+### Step 12 of 0.2.0 again (the fix)
+
+3. Open Shevery and stop it. In Liquid Vault: Home › **Personal apps** › an app you downloaded that is not in the Vault
+   (for example the same PDF app as last time) › **Copy into the Vault**. Android asks in the Vault "Do you want to
+   install this app?": **Install**. A small card says **Done**; the app is in the **Vault** tab. Start Shevery again.
+
+### Let Liquid Vault read your personal files (once)
+
+4. Home › **Access rules**. The **Vault apps** tab shows a card "Vault apps cannot see your personal files yet". Tap
+   **Open Android's setting**, switch on "Allow access to manage all files" for Liquid Vault, and come back: the card
+   is gone. (With Shevery running, **With the shell** does the same.)
+
+### A personal app reaching the Vault's files
+
+5. **Access rules** › **Personal apps** tab › **Gmail** (or any app with an *Attach* or *Open file* button). Under
+   "Vault files, through Liquid Vault" tap **Folders** › **Add a folder** › *Documents* › *Liquid Vault test* ›
+   **Choose this folder**. The page says "Vault files: 1 folder, read-only".
+6. Open Gmail › write a new email › **Attach file**. In the picker's menu choose **Liquid Vault** (under it:
+   "Vault files"). You see the folder *Documents › Liquid Vault test*: open it and tap **hello.txt**. Expected: it is
+   attached.
+7. Back in Liquid Vault: the same page › **None**. In Gmail, attach again the same way: the picker still shows the
+   test folder (it always does, for this test), but tapping hello.txt fails (Gmail says it could not attach it). That
+   is the refusal: Liquid Vault said no to Gmail.
+8. Liquid Vault › Access rules › **Access log** › **Refused**: a line "com.google.android.gm" with "REFUSED —
+   com.google.android.gm has no access to the vault files". In **All** you also see step 6's "Allowed" lines.
+
+### A Vault app reaching your personal files
+
+9. **Access rules** › **Vault apps** tab › **LocalSend** (or another Vault app with a *Send file* / *Open file*
+   button). Under "Personal files, through Liquid Vault" tap **Folders** › **Add a folder** › *Download* ›
+   **Choose this folder**.
+10. Open LocalSend from the Work tab › **Send** › **File**. In the picker's menu choose **Liquid Vault** (under it:
+    "Personal files"): you see *Download* with your personal downloads. Pick a file: LocalSend takes it. Expected: the
+    Vault app read your personal file, and only from Download (other personal folders are not there).
+11. Optional (an app that saves files): with **Can change files** on for that Vault app, saving into Liquid Vault ›
+    Download works; with it off, Android says it could not save. Turn **Can change files** off again.
+
+### An app's own files
+
+12. **Access rules** › **Vault apps** › **Aves** › "Its own files, in the Vault": **None**. Open Aves in the Vault:
+    it shows no photos. Then **Media**: your Vault photos are back. Then **Android** (Liquid Vault hands it back).
+13. With Shevery running: **Access rules** › **Personal apps** › an app that can ask for "All files access" (a file
+    manager, for example) › "Its own files": **All**. In Android's Settings › Apps › Special app access › All files
+    access, that app is now allowed. Then **Android** again: the switch there goes off and is yours to set again.
+
+### Presets, backup, restore
+
+14. **Access rules** › **Vault apps** › any app › Presets: **Photos across**. The page says "Own side: Photos and
+    media · Personal files: 2 folders, read-only" (DCIM and Pictures). Then **Android decides**: the app's rule is
+    gone ("No rule" in the list).
+15. **Access rules** › **Back up the rules** › save the file (for example in Download). Change any rule. Then
+    **Restore rules from a backup** › choose the file › type **REPLACE** › **Replace**: the rules are as you saved
+    them.
+
+### Report
+
+16. Home › More › **Diagnostics** › **Copy report**, and send it with the step numbers where you saw something else,
+    and in a few words what still feels hard. (Diagnostics B1 now says SKIPPED: it is retired.)
 
 ## Phase 1 — The Vault's core (release 0.2.0)
 

@@ -33,7 +33,9 @@ enum class Screen(val key: String) {
     SETTINGS("settings"),
     DIAGNOSTICS("diagnostics"),
     WHATS_NEW("whats-new"),
-    VAULT_COPY("vault-copy");
+    VAULT_COPY("vault-copy"),
+    RULES("rules"),
+    ACCESS_LOG("access-log");
 
     companion object {
         fun of(key: String?): Screen? = entries.firstOrNull { it.key == key }
@@ -82,6 +84,8 @@ fun AppRoot(host: Host, refresh: StateFlow<Int>, navigate: Flow<String>, onFinis
             Screen.DIAGNOSTICS -> DiagnosticsScreen(host, refresh, onClose = ::pop)
             Screen.WHATS_NEW -> WhatsNewScreen(onBack = ::pop)
             Screen.VAULT_COPY -> VaultCopyScreen(host, open = ::push, onClose = ::pop)
+            Screen.RULES -> AccessRulesScreen(host, tick, open = ::push, onBack = ::pop)
+            Screen.ACCESS_LOG -> AccessLogScreen(onBack = ::pop)
         }
     }
 }

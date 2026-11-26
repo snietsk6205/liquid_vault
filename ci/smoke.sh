@@ -471,6 +471,15 @@ if [ "$PART" = "vault" ]; then
   fi
   adb uninstall "$TPKG" | tr -d '\r' | tail -1
 
+  # The new screens open and draw (a crash there would also show in "no crash in logcat").
+  adb shell am start -n "$PKG/.ui.LauncherAlias" --es dev.liquid.vault.extra.SCREEN rules >/dev/null 2>&1
+  wait_screen rules-screen "Search by name" 20
+  if on_screen rules-screen "Personal apps" && on_screen rules-screen "Search by name"; then pass "the Access rules screen opens"; else fail "the Access rules screen opens"; look rules-screen; fi
+  adb shell am start -n "$PKG/.ui.LauncherAlias" --es dev.liquid.vault.extra.SCREEN access-log >/dev/null 2>&1
+  wait_screen log-screen "Refused" 20
+  if on_screen log-screen "Access log" && on_screen log-screen "Refused"; then pass "the Access log screen opens"; else fail "the Access log screen opens"; look log-screen; fi
+  adb shell input keyevent KEYCODE_HOME
+
   # The reboot comes before pause and resume (0.1.1): run 13 rebooted a second after a resume, and after that boot
   # Android showed "Blocked by work policy" for the Vault copy (its apps had stayed suspended by the platform).
   section "6. Reboot"

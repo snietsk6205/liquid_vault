@@ -127,6 +127,7 @@ object VaultSetup {
             dpm.setPermittedAccessibilityServices(admin, null)
         }
         step("side-specific parts switched on") { SideComponents.apply(context) }
+        step(ALL_FILES_STEP) { allowOwnAllFiles(context) }
         Prefs.of(context).edit()
             .putLong(Prefs.SETUP_DONE_AT, System.currentTimeMillis())
             .putString(Prefs.SETUP_WHY, why)
@@ -141,8 +142,19 @@ object VaultSetup {
 
     fun isDone(context: Context): Boolean = Prefs.of(context).getLong(Prefs.SETUP_DONE_AT, 0L) > 0L
 
-    /** 2 (Phase 1): the Vault-action filter (D43). A fresh setup gets everything; an older Vault gets what it misses. */
-    const val CURRENT_VERSION = 2
+    /**
+     * 2 (Phase 1): the Vault-action filter (D43). 3 (Phase 2): the Work tab closed for good (bridge A retired, Q3) and
+     * All files for the Vault copy (it serves the Vault's files to the personal side's bridge, D58). A fresh setup gets
+     * everything; an older Vault gets what it misses.
+     */
+    const val CURRENT_VERSION = 3
+
+    private const val ALL_FILES_STEP = "this app may read all of the Vault's files, for the bridge (owner app-op)"
+
+    private fun allowOwnAllFiles(context: Context) {
+        OwnerAppOps.setMode(OwnerAppOps.OP_ALL_FILES, android.os.Process.myUid(), context.packageName, AppOpsManager.MODE_ALLOWED)
+        check(android.os.Environment.isExternalStorageManager()) { "Android still says no" }
+    }
 
     /**
      * Brings a Vault set up by an older version of this app to [CURRENT_VERSION], once (each step adds only what is
@@ -157,6 +169,11 @@ object VaultSetup {
         val done = mutableListOf<String>()
         if (from < 2) {
             done += runCatching { Channel.addVaultActionFilter(Env.dpm) }.fold({ "ok: the personal copy may open screens in the Vault (Vault actions)" }, { "FAILED: Vault actions — ${it.asEvidence()}" })
+        }
+        if (from < 3) {
+            // Phase 0's bridge A opened the picker's Work tab, which shows personal apps every Vault file: closed (Q3).
+            done += runCatching { dev.liquid.vault.bridge.PickerFilters.disable() }.fold({ "ok: the Work tab is closed to personal apps (bridge A retired)" }, { "FAILED: closing the Work tab — ${it.asEvidence()}" })
+            done += runCatching { allowOwnAllFiles(context) }.fold({ "ok: $ALL_FILES_STEP" }, { "FAILED: $ALL_FILES_STEP — ${it.asEvidence()}" })
         }
         prefs.edit().putInt(Prefs.SETUP_VERSION, CURRENT_VERSION)
             .putString(Prefs.SETUP_STEPS, ((prefs.getString(Prefs.SETUP_STEPS, "") ?: "").lines().filter { it.isNotBlank() } + done).joinToString("\n"))

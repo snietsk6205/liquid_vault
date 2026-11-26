@@ -18,7 +18,8 @@ data class CheckDef(
 
 /**
  * The Phase 0 checks (docs/PLAN.md, "The checks"), in the order Diagnostics shows them. The ids are kept forever: the
- * reports Med sends back refer to them. Retired ids stay reserved: F6, F7 (the shell's app-ops on Vault apps, D40).
+ * reports Med sends back refer to them. Retired ids stay reserved: F6, F7 (the shell's app-ops on Vault apps, D40),
+ * B1 (bridge A: the picker's Work tab, closed for good in Phase 2, D60).
  */
 object PhaseZero {
     const val G_DEVICE = "Device"
@@ -65,8 +66,7 @@ object PhaseZero {
         CheckDef("L1", G_CHANNEL, "Ping the other copy", Side.BOTH, "Calls the other copy through the channel and shows its answer."),
 
         CheckDef("B0", G_BRIDGE, "Vault test folder", Side.VAULT, "Creates Documents/Liquid Vault test in the Vault with two small files, the folder every bridge check opens."),
-        CheckDef("B1", G_BRIDGE, "Bridge A: Work tab of the system picker", Side.BOTH, "The Vault copy lets personal apps use the picker's Work tab; our Vault-side provider shows only the test folder. You pick it with this app (allowed), keep a lasting folder grant, then try with another app (refused)."),
-        CheckDef("B2", G_BRIDGE, "Bridge B: \"Liquid Vault\" on the personal side", Side.BOTH, "The personal copy shows a \"Liquid Vault\" place in the normal picker and fetches the test folder through the channel. Same allowed / refused test, without opening the Work tab."),
+        CheckDef("B2", G_BRIDGE, "Bridge B: \"Liquid Vault\" on the personal side", Side.BOTH, "The personal copy shows a \"Liquid Vault\" place in the normal picker and fetches the Vault's files through the channel, as far as each app's access rule allows (Phase 2); the test folder stays browsable for this check. You pick it with this app (allowed) and keep a lasting folder grant."),
         CheckDef("B3", G_BRIDGE, "Refused app", Side.BOTH, "Reads both copies' access logs. The system picker may browse (it works for whichever app opened it, and Android does not tell a folder provider which app that is); the app itself is checked by its own package name when it opens what it picked, with or without a lasting grant. PASS when an app that is not allowed was refused there."),
 
         CheckDef("Q0", G_PAUSE, "Permission to pause", Side.PERSONAL, "MODIFY_QUIET_MODE, which you grant once with adb."),

@@ -90,6 +90,14 @@ object Channel {
         return Env.app.contentResolver.call(uriFor(other), method, arg, extras)
     }
 
+    /** Opens a file of the other side's storage, as the other copy serves it (Phase 2 bridge, D58). */
+    fun openStore(path: String, mode: String): ParcelFileDescriptor? {
+        val other = otherUserId() ?: error("there is no other copy")
+        val builder = uriFor(other).buildUpon().appendPath("store")
+        path.split('/').filter { it.isNotEmpty() }.forEach { builder.appendPath(it) }
+        return Env.app.contentResolver.openFileDescriptor(builder.build(), mode)
+    }
+
     /** Opens a file the other copy serves (the bridge's test folder), read-only. */
     fun open(path: String): ParcelFileDescriptor? {
         val other = otherUserId() ?: error("there is no other copy")
@@ -192,6 +200,22 @@ class ChannelProvider : ContentProvider() {
             "report" -> Bundle().apply { putString("text", Reports.build(context, includeOtherSide = false)) }
             "run" -> Bundle().apply { putString("json", ChannelCalls.runHeadless(context, arg ?: "", extras)) }
             "bridgeList" -> TestFolder.listForChannel(arg ?: "")
+            // Phase 2 (D58, D59): this side's storage for the other copy's bridge, the rules, and this copy's access log.
+            "storeInfo" -> dev.liquid.vault.bridge.SideStore.info()
+            "storeList" -> dev.liquid.vault.bridge.SideStore.list(arg ?: "")
+            "storeStat" -> dev.liquid.vault.bridge.SideStore.stat(arg ?: "")
+            "storeCreate" -> Bundle().apply {
+                putString("path", dev.liquid.vault.bridge.SideStore.create(extras?.getString("parent") ?: "", extras?.getString("name") ?: "", extras?.getString("mime") ?: "application/octet-stream"))
+            }
+            "storeDelete" -> Bundle().apply { dev.liquid.vault.bridge.SideStore.delete(arg ?: ""); putBoolean("ok", true) }
+            "storeRename" -> Bundle().apply {
+                putString("path", dev.liquid.vault.bridge.SideStore.rename(extras?.getString("path") ?: "", extras?.getString("name") ?: ""))
+            }
+            "rulesSync" -> Bundle().apply { dev.liquid.vault.rules.RulesStore.mirror(context, arg ?: ""); putBoolean("ok", true) }
+            "rulesGet" -> Bundle().apply { putString("json", dev.liquid.vault.rules.RulesStore.json(context)) }
+            "vaultOwnFiles" -> dev.liquid.vault.rules.OwnFilesControl.applyInVault(context, extras?.getString("pkg") ?: "", dev.liquid.vault.core.common.OwnFiles.valueOf(arg ?: ""))
+            "accessLog" -> Bundle().apply { putStringArrayList("lines", ArrayList(AccessLog.jsonLines())) }
+            "bridgeGrant" -> dev.liquid.vault.bridge.BridgeGrants.grant(context, extras?.getString("pkg") ?: "", arg ?: "", extras?.getString("file"))
             // Phase 1: the personal copy asks the Vault's owner (VaultService checks it runs in the Vault copy).
             "vaultApps" -> dev.liquid.vault.vault.VaultService.apps(context)
             "vaultAppAction" -> dev.liquid.vault.vault.VaultService.appAction(context, arg ?: "", extras?.getString("pkg") ?: "")
@@ -245,6 +269,8 @@ class ChannelProvider : ContentProvider() {
         Env.init(context)
         enforceCaller()
         val segments = uri.pathSegments
+        // Phase 2: this side's storage for the other copy's bridge, in any mode the bridge allowed (D58).
+        if (segments.firstOrNull() == "store") return dev.liquid.vault.bridge.SideStore.open(segments.drop(1).joinToString("/"), mode)
         require(segments.firstOrNull() == "test") { "only the test folder is served" }
         val relative = segments.drop(1).joinToString("/")
         if (mode != "r") {

@@ -103,6 +103,52 @@ vault_icon_shown() { [ "$(vault_icon_count)" -ge 1 ]; }
 # The test app (built by ci/make_test_apk.sh, standing for any app you downloaded) is installed in the Vault.
 test_app_in_vault() { [ "$(pkg_flag "$VU" dev.liquid.vault.testapp installed)" = "true" ]; }
 
+# probe <user> <op> <uri> [text] : the test app, as any app would, lists, reads or writes a URI it was lent (D60);
+# LAST_PROBE gets its answer ("PROBE u0 read OK ..." or "PROBE u0 read FAIL SecurityException: ...").
+probe() {
+  local user=$1 op=$2 uri=$3 text=${4:-} before now i
+  before=$(grep -c "PROBE u$user $op " "$LOG" 2>/dev/null || true)
+  if [ -n "$text" ]; then
+    adb shell "am start --user $user -W -n dev.liquid.vault.testapp/.Probe --es op $op --es uri '$uri' --es text '$text'" >/dev/null 2>&1
+  else
+    adb shell "am start --user $user -W -n dev.liquid.vault.testapp/.Probe --es op $op --es uri '$uri'" >/dev/null 2>&1
+  fi
+  for i in $(seq 1 40); do
+    now=$(grep -c "PROBE u$user $op " "$LOG" 2>/dev/null || true)
+    if [ "${now:-0}" -gt "${before:-0}" ]; then
+      LAST_PROBE=$(grep "PROBE u$user $op " "$LOG" | tail -1 | sed -E 's/.*(PROBE .*)/\1/')
+      return 0
+    fi
+    sleep 0.5
+  done
+  LAST_PROBE="(no answer from the test app)"
+}
+
+# expect_probe <what> <OK|FAIL> [text] : checks the test app's last answer.
+expect_probe() {
+  if printf '%s' "$LAST_PROBE" | grep -qE "^PROBE u[0-9]+ [a-z]+ $2" && { [ -z "${3:-}" ] || printf '%s' "$LAST_PROBE" | grep -qF "$3"; }; then
+    pass "$1"
+  else
+    fail "$1 (the app got: $LAST_PROBE; expected $2${3:+ with \"$3\"})"
+  fi
+}
+
+# all_files_mode <user> <pkg> : the app's All files app-op as appops prints it; "default" when it has none set.
+all_files_mode() {
+  local m
+  m=$(adb shell appops get --user "$1" "$2" MANAGE_EXTERNAL_STORAGE 2>/dev/null | tr -d '\r' | grep -m1 "^MANAGE_EXTERNAL_STORAGE:" | sed -E 's/^MANAGE_EXTERNAL_STORAGE: ([a-z]+).*/\1/')
+  echo "${m:-default}"
+}
+
+expect_all_files() {
+  local m
+  m=$(all_files_mode "$1" "$2")
+  if [ "$m" = "$3" ]; then pass "$4 (All files: $m)"; else fail "$4 (All files: $m, expected $3)"; fi
+}
+
+# uri_of <key> : a URI from the last bridge-grant act ("children=<uri> file=<uri>").
+uri_of() { printf '%s' "$LAST_ACT" | grep -oE "$1=[^ ]+" | head -1 | cut -d= -f2-; }
+
 # check_started <user> <id> <from line> <seconds> : AutomationActivity logs "AUTOMATION-START u<user> <id>" when it runs.
 check_started() {
   local i
@@ -321,7 +367,7 @@ if [ "$PART" = "vault" ]; then
   run_act 0 vault-lock OK 30
   run_act 0 vault-vpn OK 30
   run_act 0 vault-state OK 30
-  if printf '%s' "$LAST_ACT" | grep -q "setupVersion=2"; then pass "the Vault's setup is version 2 (Vault actions)"; else fail "the Vault's setup is version 2 (Vault actions)"; fi
+  if printf '%s' "$LAST_ACT" | grep -q "setupVersion=3"; then pass "the Vault's setup is version 3 (Work tab closed, All files for the bridge)"; else fail "the Vault's setup is version 3"; fi
   if [ "$(vault_icon_count)" = "0" ]; then pass "the Vault copy has no icon in the Work tab by default"; else fail "the Vault copy has no icon in the Work tab by default"; fi
   run_act 0 vault-icon OK 30 --es on true
   if wait_until 10 vault_icon_shown; then
@@ -355,10 +401,75 @@ if [ "$PART" = "vault" ]; then
 
   section "5. The bridges (self-tests, no picker)"
   run_check "$VU" B0 PASS 30
-  run_check "$VU" B1 PASS 30 --es selftest true
   run_check 0 B2 PASS 40 --es selftest true
-  run_check "$VU" B1 PASS 30
-  run_check "$VU" B1 PASS 30 --es undo true
+
+  section "5b. Phase 2: access rules (the bridge both ways, a Vault app's own files)"
+  TPKG=dev.liquid.vault.testapp
+  adb install -r "$OUT/testapp.apk" | tr -d '\r' | tail -1
+  if ! adb shell pm list packages --user "$VU" "$TPKG" | grep -q "$TPKG"; then adb shell pm install-existing --user "$VU" "$TPKG" | tr -d '\r' | tail -1; fi
+  # The personal copy serves your personal files to Vault apps: it needs All files on the personal side (on the phone
+  # you allow it in Android's settings; here adb does). The Vault copy gave it to itself in the Vault (setup 3).
+  adb shell appops set --user 0 "$PKG" MANAGE_EXTERNAL_STORAGE allow
+  adb shell "mkdir -p '/sdcard/Documents/LV shared' && echo 'Hello from the personal side.' > '/sdcard/Documents/LV shared/hello.txt'"
+
+  # A personal app reaching the Vault's files (bridge B in the personal copy).
+  run_act 0 bridge-grant OK 30 --es side personal --es pkg "$TPKG" --es folder "Documents/Liquid Vault test" --es file hello.txt
+  B_LIST=$(uri_of children)
+  B_FILE=$(uri_of file)
+  probe 0 list "$B_LIST"
+  expect_probe "a personal app with no rule is refused the Vault's files" FAIL "Liquid Vault refused"
+  run_act 0 rule OK 30 --es pkg "$TPKG" --es place personal --es reach FOLDERS --es folders "Documents/Liquid Vault test"
+  probe 0 list "$B_LIST"
+  expect_probe "with a folder rule it lists that Vault folder" OK "hello.txt"
+  probe 0 read "$B_FILE"
+  expect_probe "and reads a Vault file" OK "Hello from the Vault"
+  probe 0 write "$B_FILE" "changed by an app"
+  expect_probe "but may not change it (read-only)" FAIL "may only read"
+  run_act 0 rule OK 30 --es pkg "$TPKG" --es place personal --es reach FOLDERS --es folders "Documents/Liquid Vault test" --es write true
+  probe 0 write "$B_FILE" "Written through the bridge."
+  expect_probe "read-write: it changes the Vault file" OK "wrote"
+  probe 0 read "$B_FILE"
+  expect_probe "and the Vault file says so" OK "Written through the bridge."
+  run_act 0 rule OK 30 --es pkg "$TPKG" --es place personal --es reach FOLDERS --es folders "Pictures"
+  probe 0 read "$B_FILE"
+  expect_probe "outside its chosen folders it is refused" FAIL "only its chosen folders"
+  run_act 0 rule OK 30 --es pkg "$TPKG" --es place personal --es reach NONE
+
+  # A Vault app reaching your personal files (the Vault copy's bridge, served by the personal copy).
+  run_act 0 bridge-grant OK 30 --es side vault --es pkg "$TPKG" --es folder "Documents/LV shared" --es file hello.txt
+  V_LIST=$(uri_of children)
+  V_FILE=$(uri_of file)
+  probe "$VU" list "$V_LIST"
+  expect_probe "a Vault app with no rule is refused your personal files" FAIL "Liquid Vault refused"
+  run_act 0 rule OK 30 --es pkg "$TPKG" --es place vault --es reach ALL
+  probe "$VU" list "$V_LIST"
+  expect_probe "with an all-files rule it lists the personal folder" OK "hello.txt"
+  probe "$VU" read "$V_FILE"
+  expect_probe "and reads your file" OK "Hello from the personal side"
+  probe "$VU" write "$V_FILE" "changed by a Vault app"
+  expect_probe "but may not change it (read-only)" FAIL "may only read"
+  run_act 0 rule OK 30 --es pkg "$TPKG" --es place vault --es reach NONE
+
+  run_act 0 access-log OK 30 --es pkg "$TPKG"
+  if printf '%s' "$LAST_ACT" | grep -qE "$TPKG: [1-9][0-9]* allowed, [1-9][0-9]* refused"; then
+    pass "both copies logged the app's allowed and refused calls"
+  else
+    fail "both copies logged the app's allowed and refused calls"
+  fi
+
+  # A Vault app's own files, set by the owner (D57): All files by the owner's app-op.
+  OAPP=${FAPP:-$CLONE}
+  if [ -n "$OAPP" ]; then
+    run_act 0 rule OK 30 --es pkg "$OAPP" --es place vault --es own ALL
+    expect_all_files "$VU" "$OAPP" allow "own files of a Vault app: All files"
+    run_act 0 rule OK 30 --es pkg "$OAPP" --es place vault --es own NONE
+    expect_all_files "$VU" "$OAPP" deny "own files of a Vault app: No files"
+    run_act 0 rule OK 30 --es pkg "$OAPP" --es place vault --es own ANDROID
+    expect_all_files "$VU" "$OAPP" default "own files of a Vault app: back to Android"
+  else
+    note "no Vault app to set own files on"
+  fi
+  adb uninstall "$TPKG" | tr -d '\r' | tail -1
 
   # The reboot comes before pause and resume (0.1.1): run 13 rebooted a second after a resume, and after that boot
   # Android showed "Blocked by work policy" for the Vault copy (its apps had stayed suspended by the platform).
@@ -482,6 +593,11 @@ if [ "$PART" = "shell" ]; then
   expect_flag 0 com.android.camera2 suspended true "the shell suspends a personal app"
   run_act 0 personal OK 60 --es do UNSUSPEND --es pkg com.android.camera2
   expect_flag 0 com.android.camera2 suspended false "and unsuspends it"
+  # Phase 2: a personal app's own files, through the shell (D57).
+  run_act 0 rule OK 60 --es pkg com.android.camera2 --es place personal --es own ALL
+  expect_all_files 0 com.android.camera2 allow "own files of a personal app: All files (the shell's app-op)"
+  run_act 0 rule OK 60 --es pkg com.android.camera2 --es place personal --es own ANDROID
+  expect_all_files 0 com.android.camera2 default "own files of a personal app: back to Android"
   COPY=$(vault_launchables | head -1)
   if [ -n "$COPY" ]; then
     note "copying $COPY back into the Vault with the shell, after taking it out"

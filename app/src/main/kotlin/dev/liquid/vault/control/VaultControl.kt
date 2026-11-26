@@ -78,6 +78,16 @@ object VaultControl {
 
     suspend fun lockNow(): Outcome = ask("vaultLockNow")
 
+    /** Phase 2: a Vault app's own files, set by the Vault copy as the owner (D57). */
+    suspend fun ownFiles(pkg: String, own: dev.liquid.vault.core.common.OwnFiles): Outcome =
+        ask("vaultOwnFiles", own.name, Bundle().apply { putString("pkg", pkg) })
+
+    /** The Vault side's storage as the Vault copy serves it: whether it may read all of it. */
+    suspend fun storeInfo(): Boolean? = attempt { call("storeInfo")?.getBoolean("allFiles") }.getOrNull()
+
+    /** The Vault copy's access log (Vault apps reaching personal files), newest last, as JSON lines. */
+    suspend fun accessLog(): List<String> = attempt { call("accessLog")?.getStringArrayList("lines")?.toList() }.getOrNull() ?: emptyList()
+
     suspend fun setIconVisible(visible: Boolean): Outcome = ask("vaultIcon", if (visible) "on" else "off")
 
     data class State(val shellBlocked: Boolean, val iconVisible: Boolean, val setupVersion: Int)

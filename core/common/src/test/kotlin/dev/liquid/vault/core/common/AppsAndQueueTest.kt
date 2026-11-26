@@ -103,6 +103,38 @@ class AppsAndQueueTest {
     }
 
     @Test
+    fun ownFilesForAPersonalAppIsOneScript() {
+        val media = listOf("android.permission.READ_MEDIA_IMAGES", "android.permission.READ_MEDIA_VIDEO")
+        val all = ShellCommands.ownFiles(0, "org.mozilla.firefox", OwnFiles.ALL, media)
+        assertEquals(listOf("sh", "-c"), all.take(2))
+        assertTrue(all[2].startsWith("appops set --user 0 org.mozilla.firefox MANAGE_EXTERNAL_STORAGE allow && echo 'ok all-files'"))
+        assertTrue(all[2].contains("pm grant --user 0 org.mozilla.firefox android.permission.READ_MEDIA_IMAGES"))
+        val none = ShellCommands.ownFiles(0, "org.mozilla.firefox", OwnFiles.NONE, media)[2]
+        assertTrue(none.contains("MANAGE_EXTERNAL_STORAGE deny") && none.contains("pm revoke"))
+        val android = ShellCommands.ownFiles(0, "org.mozilla.firefox", OwnFiles.ANDROID, media)[2]
+        assertTrue(android.contains("MANAGE_EXTERNAL_STORAGE default") && !android.contains("pm "))
+        assertThrows(IllegalArgumentException::class.java) { ShellCommands.ownFiles(0, "x; reboot", OwnFiles.ALL, emptyList()) }
+        assertThrows(IllegalArgumentException::class.java) { ShellCommands.ownFiles(0, "org.mozilla.firefox", OwnFiles.ALL, listOf("a;reboot")) }
+        assertTrue(ShellCommands.ownFilesDone("ok all-files\nno android.permission.READ_MEDIA_VIDEO\n"))
+        assertFalse(ShellCommands.ownFilesDone("Error: Unknown package\n"))
+    }
+
+    @Test
+    fun anOwnFilesChoiceReplacesTheOneWaiting() {
+        val first = q(1, ShellAction.OWN_FILES).copy(arg = OwnFiles.NONE.name)
+        val (one, a1) = ActionQueue.add(emptyList(), first)
+        assertEquals(ActionQueue.Added.WAITING, a1)
+        val (still, a2) = ActionQueue.add(one, q(2, ShellAction.OWN_FILES).copy(arg = OwnFiles.ALL.name))
+        assertEquals(ActionQueue.Added.REPLACED, a2)
+        assertEquals(OwnFiles.ALL, still.single().ownFiles)
+        assertEquals("Firefox: All files on its side", still.single().title)
+        assertTrue(ActionQueue.succeeded(still.single(), "ok all-files"))
+        // An old queue file (0.2.0) has no "arg": it still reads.
+        val old = """{"version":1,"actions":[{"id":1,"action":"FREEZE","pkg":"a.b","label":"A","userId":0,"createdAt":0}]}"""
+        assertEquals(null, VaultJson.decodeFromString(QueueFile.serializer(), old).actions.single().arg)
+    }
+
+    @Test
     fun aFailedShellAnswerKeepsTheReason() {
         // What the shell said in CI run 15 when it was asked to `pm hide` (trimmed stack trace).
         val run15 = """

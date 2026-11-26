@@ -22,6 +22,15 @@ import dev.liquid.vault.control.VaultControl
 import dev.liquid.vault.core.common.AppRecord
 import dev.liquid.vault.core.common.Place
 import dev.liquid.vault.core.common.ShellAction
+import dev.liquid.vault.bridge.AccessLog
+import dev.liquid.vault.bridge.BridgeGrants
+import dev.liquid.vault.channel.Channel
+import dev.liquid.vault.core.common.AccessEntry
+import dev.liquid.vault.core.common.AppRule
+import dev.liquid.vault.core.common.OwnFiles
+import dev.liquid.vault.core.common.Reach
+import dev.liquid.vault.core.common.VaultJson
+import dev.liquid.vault.rules.RulesStore
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -131,6 +140,38 @@ class AutomationActivity : ComponentActivity(), Host {
                     "vault-vpn" -> VaultControl.vpn()?.let { Outcome(true, "current=${it.current} apps=${it.apps.size}") } ?: Outcome(false, "no answer")
                     "vault-icon" -> VaultControl.setIconVisible(extras.getString("on") == "true")
                     "vault-state" -> VaultControl.state()?.let { Outcome(true, "shellBlocked=${it.shellBlocked} iconVisible=${it.iconVisible} setupVersion=${it.setupVersion}") } ?: Outcome(false, "no answer")
+                    // Phase 2 (D60): a rule as the rules screen saves it, a bridge folder lent to an app as the picker
+                    // would, and both copies' access logs counted.
+                    "rule" -> {
+                        val place = if (extras.getString("place") == "vault") Place.VAULT else Place.PERSONAL
+                        val rule = AppRule(
+                            pkg = pkg ?: "",
+                            place = place,
+                            label = pkg ?: "",
+                            own = OwnFiles.valueOf(extras.getString("own") ?: "ANDROID"),
+                            reach = Reach.valueOf(extras.getString("reach") ?: "NONE"),
+                            folders = extras.getString("folders")?.split('|')?.filter { it.isNotBlank() } ?: emptyList(),
+                            write = extras.getString("write") == "true",
+                        )
+                        RulesStore.put(this@AutomationActivity, rule)
+                    }
+                    "bridge-grant" -> {
+                        val folder = extras.getString("folder") ?: ""
+                        val file = extras.getString("file")
+                        val b = if (extras.getString("side") == "vault") {
+                            withContext(Dispatchers.IO) { Channel.call("bridgeGrant", folder, Bundle().apply { putString("pkg", pkg); putString("file", file) }) }
+                        } else {
+                            BridgeGrants.grant(this@AutomationActivity, pkg ?: "", folder, file)
+                        }
+                        b?.let { Outcome(true, "children=${it.getString("children")} file=${it.getString("file")}") } ?: Outcome(false, "no answer")
+                    }
+                    "access-log" -> {
+                        val mine = AccessLog.entries()
+                        val theirs = VaultControl.accessLog().mapNotNull { runCatching { VaultJson.decodeFromString(AccessEntry.serializer(), it) }.getOrNull() }
+                        fun count(list: List<AccessEntry>) = "${list.count { it.allowed }} allowed, ${list.count { !it.allowed }} refused"
+                        val probe = (mine + theirs).filter { it.callerPackage == pkg }
+                        Outcome(true, "personal bridge: ${count(mine)} · Vault bridge: ${count(theirs)}" + (pkg?.let { " · $it: ${count(probe)}" } ?: ""))
+                    }
                     else -> Outcome(false, "unknown act $act")
                 }
             }.getOrElse { Outcome(false, it.message ?: it.javaClass.simpleName) }

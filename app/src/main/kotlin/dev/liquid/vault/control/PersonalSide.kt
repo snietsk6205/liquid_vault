@@ -101,9 +101,9 @@ object ActionQueueStore {
      * Asks for [action] on a personal app: done at once when the shell is ready, else it waits. Returns what happened,
      * in plain words.
      */
-    suspend fun request(context: Context, action: ShellAction, app: AppRecord): Outcome {
+    suspend fun request(context: Context, action: ShellAction, app: AppRecord, arg: String? = null): Outcome {
         load(context)
-        val item = QueuedAction(System.currentTimeMillis() * 1000 + (0..999).random(), action, app.pkg, app.label, Env.myUserId, System.currentTimeMillis())
+        val item = QueuedAction(System.currentTimeMillis() * 1000 + (0..999).random(), action, app.pkg, app.label, Env.myUserId, System.currentTimeMillis(), arg = arg)
         val (next, added) = mutex.withLock { ActionQueue.add(_queue.value, item).also { (list, _) -> save(context, list) } }
         DebugLog.event("Queue", "${item.title}: ${added.words}")
         if (added == ActionQueue.Added.CANCELLED) return Outcome(true, "${app.label}: ${added.words}")
@@ -131,7 +131,9 @@ object ActionQueueStore {
         if (Shell.unavailableReason() != null) return@withContext
         mutex.withLock {
             for (a in ActionQueue.due(_queue.value)) {
-                val result = runCatching { Shell.run(ActionQueue.command(a), 30_000) }
+                // An app's own files need the storage and media permissions it asks for (D57).
+                val requested = if (a.action == ShellAction.OWN_FILES) dev.liquid.vault.rules.OwnFilesControl.requested(context, a.pkg) else emptyList()
+                val result = runCatching { Shell.run(ActionQueue.command(a, requested), 30_000) }
                 val output = result.getOrNull()?.output ?: ""
                 val ok = result.isSuccess && ActionQueue.succeeded(a, output)
                 if (ok) {

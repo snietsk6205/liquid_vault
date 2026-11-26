@@ -1,5 +1,6 @@
 package dev.liquid.vault.bridge
 
+import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.database.Cursor
@@ -19,12 +20,19 @@ import dev.liquid.vault.R
 import dev.liquid.vault.admin.Crossing
 import dev.liquid.vault.channel.Channel
 import dev.liquid.vault.core.common.AccessEntry
+import dev.liquid.vault.core.common.AccessRules
+import dev.liquid.vault.core.common.AppRule
+import dev.liquid.vault.core.common.BridgeAction
 import dev.liquid.vault.core.common.BridgeCaller
 import dev.liquid.vault.core.common.BridgeDecision
 import dev.liquid.vault.core.common.BridgeRules
 import dev.liquid.vault.core.common.DebugLog
+import dev.liquid.vault.core.common.Place
+import dev.liquid.vault.core.common.StoragePaths
 import dev.liquid.vault.core.common.VaultJson
 import dev.liquid.vault.diag.Prefs
+import dev.liquid.vault.rules.RulesStore
+import java.io.FileNotFoundException
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -36,6 +44,9 @@ import java.util.Locale
  */
 object TestFolder {
     const val NAME = "Liquid Vault test"
+
+    /** Its path inside the Vault's storage, as the bridge names it. */
+    const val PATH = "Documents/$NAME"
 
     fun dir(): File = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS), NAME)
 
@@ -159,6 +170,9 @@ object AccessLog {
         load()
         return recent.toList()
     }
+
+    /** The newest entries as JSON lines, for the other copy's access log screen. */
+    fun jsonLines(max: Int = 200): List<String> = entries().takeLast(max).map { VaultJson.encodeToString(AccessEntry.serializer(), it) }
 }
 
 /** Phase 0's allowed list for the bridge (each copy keeps its own). Liquid Vault itself is always allowed. */
@@ -214,98 +228,214 @@ object PickerFilters {
     fun isOn(): Boolean = Prefs.app.getBoolean(Prefs.B1_FILTERS_ON, false)
 }
 
-/** One file or folder a bridge shows. [relative] is its path inside the test folder ("" for the folder itself). */
-data class BridgeEntry(val name: String, val relative: String, val isDir: Boolean, val size: Long, val modified: Long, val mime: String)
+/** One file or folder a bridge shows; [path] is its path inside the other side's storage ("" for the top). */
+data class BridgeEntry(val name: String, val path: String, val isDir: Boolean, val size: Long, val modified: Long, val mime: String)
 
 /**
- * What both bridges share: one root showing the test folder, read-only in Phase 0, every call checked against
- * [BridgeRules] by calling package and written to the [AccessLog]. Document ids are "test" and "test/<path>".
+ * Phase 2's bridge (D58): a "Liquid Vault" place in the system picker showing the other side's files, as far as the
+ * rules let the calling app reach: checked by calling package ([AccessRules.decide]) on every call and logged. The
+ * files come from the other copy through the channel ([SideStore] there). Document ids: "root" for the top,
+ * "p:<path>" for the rest. The Work tab (bridge A of Phase 0) stays closed (Q3).
  */
-abstract class BridgeProvider(private val via: String) : DocumentsProvider() {
-    abstract val rootTitle: String
+abstract class CrossBridgeProvider(private val via: String, private val appsPlace: Place) : DocumentsProvider() {
     abstract val rootSummary: String
-    abstract fun available(): Boolean
-    abstract fun children(relative: String): List<BridgeEntry>
-    abstract fun stat(relative: String): BridgeEntry?
-    abstract fun openRead(relative: String): ParcelFileDescriptor
+
+    /** This copy is the one this bridge belongs in. */
+    abstract fun onRightSide(): Boolean
+
+    /** Folders the system picker may always browse and read (Phase 0's test folder, so B2 and B3 still work). */
+    open val pickerFolders: Set<String> = emptySet()
+
+    /** Phase 0's document ids still held as lasting grants on the phone (R3). */
+    open fun legacyPath(documentId: String): String? = null
 
     override fun onCreate(): Boolean {
         context?.let { Env.init(it) }
         return true
     }
 
-    private fun relativeOf(documentId: String): String {
-        require(documentId == ROOT_DOC || documentId.startsWith("$ROOT_DOC/")) { "unknown document $documentId" }
-        return documentId.removePrefix(ROOT_DOC).removePrefix("/")
+    private val authority: String get() = "${Env.app.packageName}.bridge.${if (appsPlace == Place.PERSONAL) "personal" else "vault"}"
+
+    private fun rules(): List<AppRule> = RulesStore.rules(Env.app)
+
+    private fun pathOf(documentId: String): String = when {
+        documentId == ROOT_DOC -> ""
+        documentId.startsWith(PREFIX) -> StoragePaths.clean(documentId.removePrefix(PREFIX)) ?: throw FileNotFoundException(documentId)
+        else -> legacyPath(documentId) ?: throw FileNotFoundException("unknown document $documentId")
     }
 
-    private fun gate(action: String, documentId: String) {
-        val context = context ?: throw SecurityException("no context")
-        Env.init(context)
-        val caller = BridgeCaller(callingPackage, Binder.getCallingUid() / 100_000)
-        val decision = BridgeRules.decide(caller, context.packageName, BridgeAllowlist.get(), BridgeAllowlist.systemPickers())
-        AccessLog.add(AccessEntry(System.currentTimeMillis(), via, caller.packageName, caller.userId, action, documentId, decision is BridgeDecision.Allowed, decision.reason))
+    private fun idOf(path: String): String = if (path.isEmpty()) ROOT_DOC else PREFIX + path
+
+    private fun decideFor(pkg: String?, action: BridgeAction, path: String): BridgeDecision {
+        val pickers = BridgeAllowlist.systemPickers()
+        if (pkg in pickers && !action.write && pickerFolders.isNotEmpty() && (path.isEmpty() || pickerFolders.any { StoragePaths.inside(path, it) })) {
+            val byRules = AccessRules.decide(rules(), appsPlace, pkg, action, path, Env.app.packageName, pickers)
+            if (byRules is BridgeDecision.Allowed) return byRules
+            return BridgeDecision.Allowed("the system picker, browsing the Liquid Vault test folder")
+        }
+        return AccessRules.decide(rules(), appsPlace, pkg, action, path, Env.app.packageName, pickers)
+    }
+
+    /** Checks the calling app, logs the call, and refuses with the reason. Returns the calling package. */
+    private fun gate(action: BridgeAction, path: String): String? {
+        Env.init(context ?: throw SecurityException("no context"))
+        val pkg = callingPackage
+        val user = Binder.getCallingUid() / 100_000
+        val decision = decideFor(pkg, action, path)
+        AccessLog.add(AccessEntry(System.currentTimeMillis(), via, pkg, user, action.words, path.ifEmpty { "(top)" }, decision is BridgeDecision.Allowed, decision.reason))
         if (decision is BridgeDecision.Refused) throw SecurityException("Liquid Vault refused: ${decision.reason}")
+        return pkg
+    }
+
+    /** The other copy's answer, or the reason it could not answer as a FileNotFoundException the picker shows. */
+    private fun <T> remote(what: String, block: () -> T): T = try {
+        block()
+    } catch (e: SecurityException) {
+        throw e
+    } catch (e: Exception) {
+        throw FileNotFoundException("$what: ${e.message ?: e.javaClass.simpleName}")
+    }
+
+    private fun list(path: String): List<BridgeEntry> = remote(path.ifEmpty { "the top" }) {
+        val b = Channel.call("storeList", path) ?: return@remote emptyList()
+        val names = b.getStringArray("names") ?: return@remote emptyList()
+        val dirs = b.getBooleanArray("dirs") ?: BooleanArray(names.size)
+        val sizes = b.getLongArray("sizes") ?: LongArray(names.size)
+        val modified = b.getLongArray("modified") ?: LongArray(names.size)
+        val mimes = b.getStringArray("mimes") ?: Array(names.size) { "application/octet-stream" }
+        names.indices.map { i -> BridgeEntry(names[i], StoragePaths.child(path, names[i]), dirs[i], sizes[i], modified[i], mimes[i]) }
+    }
+
+    private fun stat(path: String): BridgeEntry? {
+        if (path.isEmpty()) return BridgeEntry("Liquid Vault", "", true, 0L, 0L, Document.MIME_TYPE_DIR)
+        val b = remote(path) { Channel.call("storeStat", path) } ?: return null
+        if (!b.getBoolean("exists")) return null
+        return BridgeEntry(StoragePaths.name(path), path, b.getBoolean("dir"), b.getLong("size"), b.getLong("modified"), b.getString("mime") ?: "application/octet-stream")
+    }
+
+    /** The top as [pkg] sees it: the other side's real top, or the chosen folders. */
+    private fun topFor(pkg: String?): List<BridgeEntry> {
+        val pickers = BridgeAllowlist.systemPickers()
+        val chosen = AccessRules.topEntries(rules(), appsPlace, pkg, Env.app.packageName, pickers)
+            ?.let { if (pkg in pickers) (it + pickerFolders).distinct().sorted() else it }
+            ?: return list("")
+        return chosen.mapNotNull { folder -> stat(folder)?.copy(name = folder.replace("/", " › ")) }
     }
 
     override fun queryRoots(projection: Array<out String>?): Cursor {
         val c = MatrixCursor(projection ?: DEFAULT_ROOT_PROJECTION)
-        if (!runCatching { available() }.getOrDefault(false)) return c
+        if (!runCatching { onRightSide() && Channel.ready() }.getOrDefault(false)) return c
+        val union = AccessRules.union(rules(), appsPlace)
+        var flags = Root.FLAG_SUPPORTS_IS_CHILD or Root.FLAG_LOCAL_ONLY
+        if (union.allWrite || union.writeFolders.isNotEmpty()) flags = flags or Root.FLAG_SUPPORTS_CREATE
         c.newRow()
             .add(Root.COLUMN_ROOT_ID, ROOT_ID)
             .add(Root.COLUMN_DOCUMENT_ID, ROOT_DOC)
-            .add(Root.COLUMN_TITLE, rootTitle)
+            .add(Root.COLUMN_TITLE, "Liquid Vault")
             .add(Root.COLUMN_SUMMARY, rootSummary)
-            .add(Root.COLUMN_FLAGS, Root.FLAG_SUPPORTS_IS_CHILD or Root.FLAG_LOCAL_ONLY)
+            .add(Root.COLUMN_FLAGS, flags)
             .add(Root.COLUMN_ICON, R.mipmap.ic_launcher)
             .add(Root.COLUMN_MIME_TYPES, "*/*")
         return c
     }
 
     override fun queryDocument(documentId: String, projection: Array<out String>?): Cursor {
-        gate("details", documentId)
+        val path = pathOf(documentId)
+        val pkg = gate(BridgeAction.DETAILS, path)
         val c = MatrixCursor(projection ?: DEFAULT_DOCUMENT_PROJECTION)
-        val entry = stat(relativeOf(documentId)) ?: throw java.io.FileNotFoundException(documentId)
-        addRow(c, entry)
+        addRow(c, stat(path) ?: throw FileNotFoundException(documentId), pkg)
         return c
     }
 
     override fun queryChildDocuments(parentDocumentId: String, projection: Array<out String>?, sortOrder: String?): Cursor {
-        gate("list", parentDocumentId)
+        val path = pathOf(parentDocumentId)
+        val pkg = gate(BridgeAction.LIST, path)
         val c = MatrixCursor(projection ?: DEFAULT_DOCUMENT_PROJECTION)
-        children(relativeOf(parentDocumentId)).forEach { addRow(c, it) }
+        (if (path.isEmpty()) topFor(pkg) else list(path)).forEach { addRow(c, it, pkg) }
+        c.setNotificationUri(Env.app.contentResolver, DocumentsContract.buildChildDocumentsUri(authority, parentDocumentId))
         return c
     }
 
     override fun openDocument(documentId: String, mode: String, signal: CancellationSignal?): ParcelFileDescriptor {
-        if (mode != "r") {
-            gate("write ($mode)", documentId)
-            throw SecurityException("Liquid Vault: the test folder is read-only in Phase 0")
-        }
-        gate("open", documentId)
-        return openRead(relativeOf(documentId))
+        val path = pathOf(documentId)
+        val write = mode.contains('w') || mode.contains('a')
+        gate(if (write) BridgeAction.WRITE else BridgeAction.READ, path)
+        return remote(path) { Channel.openStore(path, mode) } ?: throw FileNotFoundException(documentId)
     }
 
-    override fun isChildDocument(parentDocumentId: String, documentId: String): Boolean =
-        documentId == parentDocumentId || documentId.startsWith("$parentDocumentId/")
+    override fun createDocument(parentDocumentId: String, mimeType: String, displayName: String): String {
+        val parent = pathOf(parentDocumentId)
+        require(StoragePaths.validName(displayName)) { "not a file name: $displayName" }
+        gate(BridgeAction.CREATE, StoragePaths.child(parent, displayName))
+        val made = remote(displayName) {
+            Channel.call("storeCreate", null, Bundle().apply { putString("parent", parent); putString("name", displayName); putString("mime", mimeType) })?.getString("path")
+        } ?: throw FileNotFoundException("$displayName was not created")
+        notifyChildren(parentDocumentId)
+        return idOf(made)
+    }
 
-    override fun getDocumentType(documentId: String): String =
-        stat(relativeOf(documentId))?.mime ?: "application/octet-stream"
+    override fun deleteDocument(documentId: String) {
+        val path = pathOf(documentId)
+        gate(BridgeAction.DELETE, path)
+        remote(path) { Channel.call("storeDelete", path) }
+        notifyChildren(idOf(StoragePaths.parent(path)))
+    }
 
-    private fun addRow(c: MatrixCursor, e: BridgeEntry) {
-        val id = if (e.relative.isEmpty()) ROOT_DOC else "$ROOT_DOC/${e.relative}"
+    override fun renameDocument(documentId: String, displayName: String): String? {
+        val path = pathOf(documentId)
+        require(StoragePaths.validName(displayName)) { "not a file name: $displayName" }
+        gate(BridgeAction.RENAME, path)
+        val renamed = remote(path) {
+            Channel.call("storeRename", null, Bundle().apply { putString("path", path); putString("name", displayName) })?.getString("path")
+        } ?: throw FileNotFoundException("$path was not renamed")
+        notifyChildren(idOf(StoragePaths.parent(path)))
+        return idOf(renamed).takeIf { it != documentId }
+    }
+
+    override fun isChildDocument(parentDocumentId: String, documentId: String): Boolean {
+        val parent = runCatching { pathOf(parentDocumentId) }.getOrNull() ?: return false
+        val child = runCatching { pathOf(documentId) }.getOrNull() ?: return false
+        return StoragePaths.inside(child, parent)
+    }
+
+    override fun getDocumentType(documentId: String): String {
+        val path = pathOf(documentId)
+        return if (path.isEmpty()) Document.MIME_TYPE_DIR else stat(path)?.mime ?: "application/octet-stream"
+    }
+
+    private fun notifyChildren(parentDocumentId: String) {
+        runCatching { Env.app.contentResolver.notifyChange(DocumentsContract.buildChildDocumentsUri(authority, parentDocumentId), null) }
+    }
+
+    /** What [pkg] may do with [e], for the picker's buttons (the call itself is checked again when it comes). */
+    private fun flagsFor(pkg: String?, e: BridgeEntry): Int {
+        fun ok(action: BridgeAction, path: String) = decideFor(pkg, action, path) is BridgeDecision.Allowed
+        var f = 0
+        if (!e.isDir && ok(BridgeAction.WRITE, e.path)) f = f or Document.FLAG_SUPPORTS_WRITE
+        if (e.isDir && ok(BridgeAction.CREATE, StoragePaths.child(e.path, "new"))) f = f or Document.FLAG_DIR_SUPPORTS_CREATE
+        if (e.path.isNotEmpty() && ok(BridgeAction.DELETE, e.path)) f = f or Document.FLAG_SUPPORTS_DELETE
+        if (e.path.isNotEmpty() && ok(BridgeAction.RENAME, e.path)) f = f or Document.FLAG_SUPPORTS_RENAME
+        return f
+    }
+
+    private fun addRow(c: MatrixCursor, e: BridgeEntry, pkg: String?) {
         c.newRow()
-            .add(Document.COLUMN_DOCUMENT_ID, id)
+            .add(Document.COLUMN_DOCUMENT_ID, idOf(e.path))
             .add(Document.COLUMN_DISPLAY_NAME, e.name)
             .add(Document.COLUMN_MIME_TYPE, e.mime)
             .add(Document.COLUMN_SIZE, e.size)
             .add(Document.COLUMN_LAST_MODIFIED, e.modified)
-            .add(Document.COLUMN_FLAGS, 0)
+            .add(Document.COLUMN_FLAGS, flagsFor(pkg, e))
     }
 
     companion object {
-        const val ROOT_ID = "vault-test"
-        const val ROOT_DOC = "test"
+        const val ROOT_ID = "liquid-vault"
+        const val ROOT_DOC = "root"
+        const val PREFIX = "p:"
+
+        /** The document id of [path] (for grants and the checks). */
+        fun documentId(path: String): String = if (path.isEmpty()) ROOT_DOC else PREFIX + path
+
         val DEFAULT_ROOT_PROJECTION = arrayOf(
             Root.COLUMN_ROOT_ID, Root.COLUMN_DOCUMENT_ID, Root.COLUMN_TITLE, Root.COLUMN_SUMMARY,
             Root.COLUMN_FLAGS, Root.COLUMN_ICON, Root.COLUMN_MIME_TYPES,
@@ -321,66 +451,47 @@ abstract class BridgeProvider(private val via: String) : DocumentsProvider() {
     }
 }
 
-/** Bridge A, in the Vault copy: the test folder straight from the Vault's storage, reached through the Work tab. */
-class VaultBridgeProvider : BridgeProvider("A") {
-    override val rootTitle = TestFolder.NAME
-    override val rootSummary = "Vault side · bridge A (Liquid Vault)"
-    override fun available(): Boolean = Env.isVaultSide && TestFolder.dir().isDirectory
-
-    private fun entryOf(file: File, base: File) = BridgeEntry(
-        name = if (file == base) TestFolder.NAME else file.name,
-        relative = if (file == base) "" else file.relativeTo(base).path,
-        isDir = file.isDirectory,
-        size = if (file.isFile) file.length() else 0L,
-        modified = file.lastModified(),
-        mime = TestFolder.mimeOf(file),
-    )
-
-    override fun children(relative: String): List<BridgeEntry> {
-        val base = TestFolder.dir().canonicalFile
-        val dir = TestFolder.resolve(relative)?.takeIf { it.isDirectory } ?: throw java.io.FileNotFoundException(relative)
-        return dir.listFiles()?.sortedBy { it.name.lowercase() }?.map { entryOf(it.canonicalFile, base) } ?: emptyList()
-    }
-
-    override fun stat(relative: String): BridgeEntry? {
-        val base = TestFolder.dir().canonicalFile
-        return TestFolder.resolve(relative)?.let { entryOf(it.canonicalFile, base) }
-    }
-
-    override fun openRead(relative: String): ParcelFileDescriptor {
-        val f = TestFolder.resolve(relative)?.takeIf { it.isFile } ?: throw java.io.FileNotFoundException(relative)
-        return ParcelFileDescriptor.open(f, ParcelFileDescriptor.MODE_READ_ONLY)
-    }
+/**
+ * In the Vault copy: the personal side's files for Vault apps ("Liquid Vault · Personal files" in their picker),
+ * served by the personal copy. (In Phase 0 this provider was bridge A: the Vault's test folder in the Work tab.)
+ */
+class VaultBridgeProvider : CrossBridgeProvider("V", Place.VAULT) {
+    override val rootSummary = "Personal files"
+    override fun onRightSide(): Boolean = Env.isVaultSide
 }
 
 /**
- * Bridge B, in the personal copy: a "Liquid Vault" place in the personal picker. It shows the Vault's test folder by
- * asking the Vault copy through the channel; the Work tab stays closed.
+ * In the personal copy: the Vault's files for personal apps ("Liquid Vault · Vault files" in their picker), served by
+ * the Vault copy. The Work tab stays closed.
  */
-class PersonalBridgeProvider : BridgeProvider("B") {
-    override val rootTitle = "Liquid Vault"
-    override val rootSummary = "Vault test folder · bridge B"
-    override fun available(): Boolean = !Env.isVaultSide && Channel.ready()
+class PersonalBridgeProvider : CrossBridgeProvider("B", Place.PERSONAL) {
+    override val rootSummary = "Vault files"
+    override fun onRightSide(): Boolean = !Env.isVaultSide
+    override val pickerFolders: Set<String> = setOf(TestFolder.PATH)
 
-    override fun children(relative: String): List<BridgeEntry> {
-        val b = Channel.call("bridgeList", relative) ?: return emptyList()
-        val names = b.getStringArray("names") ?: return emptyList()
-        val dirs = b.getBooleanArray("dirs") ?: BooleanArray(names.size)
-        val sizes = b.getLongArray("sizes") ?: LongArray(names.size)
-        val modified = b.getLongArray("modified") ?: LongArray(names.size)
-        val mimes = b.getStringArray("mimes") ?: Array(names.size) { "application/octet-stream" }
-        return names.indices.map { i ->
-            val rel = if (relative.isEmpty()) names[i] else "$relative/${names[i]}"
-            BridgeEntry(names[i], rel, dirs[i], sizes[i], modified[i], mimes[i])
+    // Phase 0's ids ("test", "test/<path>") pointed into the Vault's test folder.
+    override fun legacyPath(documentId: String): String? = when {
+        documentId == "test" -> TestFolder.PATH
+        documentId.startsWith("test/") -> StoragePaths.clean(TestFolder.PATH + "/" + documentId.removePrefix("test/"))
+        else -> null
+    }
+}
+
+/** Lends a folder of this copy's bridge to an app, as the system picker would (for the emulator test, D60). */
+object BridgeGrants {
+    fun grant(context: Context, pkg: String, folder: String, file: String?): Bundle {
+        val side = if (Env.isVaultSide) "vault" else "personal"
+        val authority = "${context.packageName}.bridge.$side"
+        val clean = StoragePaths.clean(folder) ?: error("not a folder: $folder")
+        val docId = CrossBridgeProvider.documentId(clean)
+        val tree = DocumentsContract.buildTreeDocumentUri(authority, docId)
+        val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_PREFIX_URI_PERMISSION
+        context.grantUriPermission(pkg, tree, flags)
+        DebugLog.event("Bridge", "lent ${clean.ifEmpty { "the top" }} of the $side bridge to $pkg")
+        return Bundle().apply {
+            putString("tree", tree.toString())
+            putString("children", DocumentsContract.buildChildDocumentsUriUsingTree(tree, docId).toString())
+            file?.let { putString("file", DocumentsContract.buildDocumentUriUsingTree(tree, CrossBridgeProvider.documentId(StoragePaths.child(clean, it))).toString()) }
         }
     }
-
-    override fun stat(relative: String): BridgeEntry? {
-        if (relative.isEmpty()) return BridgeEntry(TestFolder.NAME, "", true, 0L, 0L, Document.MIME_TYPE_DIR)
-        val parent = relative.substringBeforeLast('/', "")
-        return children(parent).firstOrNull { it.relative == relative }
-    }
-
-    override fun openRead(relative: String): ParcelFileDescriptor =
-        Channel.open(relative) ?: throw java.io.FileNotFoundException(relative)
 }

@@ -18,7 +18,7 @@ import dev.liquid.vault.admin.ShellAccess
 import dev.liquid.vault.admin.VaultSetup
 import dev.liquid.vault.bridge.AccessLog
 import dev.liquid.vault.bridge.BridgeAllowlist
-import dev.liquid.vault.bridge.BridgeProvider
+import dev.liquid.vault.bridge.CrossBridgeProvider
 import dev.liquid.vault.bridge.PickerFilters
 import dev.liquid.vault.bridge.TestFolder
 import dev.liquid.vault.channel.Channel
@@ -74,10 +74,6 @@ object Runner {
     val answers: Map<String, List<Answer>> = mapOf(
         "F1" to sees,
         "F2" to seesAgain,
-        "B1" to listOf(
-            Answer("Only “${TestFolder.NAME}”", CheckStatus.PASS, "you saw: the Work tab showed only our test folder"),
-            Answer("Also the Vault's own folders", CheckStatus.PASS, "you saw: the Work tab ALSO showed the Vault's own folders (Internal storage, Images, Downloads…). Bridge A works but shows the whole Vault to any personal app you pick with."),
-        ),
     )
 
     /** Checks that change nothing and need no screen: what "Run safe checks" runs. */
@@ -151,17 +147,13 @@ object Runner {
         "L0" -> l0(host, extras)
         "L1" -> l1()
         "B0" -> b0()
-        "B1" -> when {
-            extras["selftest"] == "true" -> selfTest("B1", "${Env.app.packageName}.bridge.vault", vault = true)
-            Env.isVaultSide -> b1Vault()
-            else -> bPick("B1", host, Uri.EMPTY)
-        }
+        "B1" -> r("B1", CheckStatus.SKIPPED, "retired in 0.3.0: the Work tab stays closed (Q3); personal apps reach the Vault through B2's \"Liquid Vault\" place, as far as their access rules allow")
         "B1-undo" -> sideOnly("B1-undo", vault = true)
             ?: r("B1-undo", CheckStatus.PASS, "the Work tab is closed to personal apps again", PickerFilters.disable())
         "B2" -> when {
             extras["selftest"] == "true" -> selfTest("B2", "${Env.app.packageName}.bridge.personal", vault = false)
             Env.isVaultSide -> b2Vault()
-            else -> bPick("B2", host, DocumentsContract.buildDocumentUri("${Env.app.packageName}.bridge.personal", BridgeProvider.ROOT_DOC))
+            else -> bPick("B2", host, DocumentsContract.buildDocumentUri("${Env.app.packageName}.bridge.personal", CrossBridgeProvider.documentId(TestFolder.PATH)))
         }
         "B3" -> b3()
         "Q0" -> q0()
@@ -828,7 +820,7 @@ object Runner {
         ping.exceptionOrNull()?.let { lines += "calling the other copy failed: ${it.asEvidence()}" }
         val otherReady = ping.getOrNull()?.getBoolean("channelReady") ?: false
         lines += "the other copy may call this copy: $otherReady"
-        BridgeProvider.notifyRootsChanged("${Env.app.packageName}.bridge.personal")
+        CrossBridgeProvider.notifyRootsChanged("${Env.app.packageName}.bridge.personal")
         return if (otherReady) r("L0", CheckStatus.PASS, "both copies can call each other", lines)
         else r("L0", CheckStatus.FAIL, "only one way works: tap \"Connect\" in the other copy too", lines)
     }
@@ -850,14 +842,8 @@ object Runner {
     private fun b0(): CheckResult {
         sideOnly("B0", vault = true)?.let { return it }
         val lines = TestFolder.ensure()
-        BridgeProvider.notifyRootsChanged("${Env.app.packageName}.bridge.vault")
+        CrossBridgeProvider.notifyRootsChanged("${Env.app.packageName}.bridge.vault")
         return r("B0", CheckStatus.PASS, "the test folder is ready in the Vault", lines)
-    }
-
-    private fun b1Vault(): CheckResult {
-        val lines = TestFolder.ensure() + PickerFilters.enable()
-        BridgeProvider.notifyRootsChanged("${Env.app.packageName}.bridge.vault")
-        return r("B1", CheckStatus.PASS, "the Work tab is open to personal apps; now run B1 in the personal copy (\"Undo\" closes it)", lines + "allowed apps here: ${BridgeAllowlist.get().ifEmpty { setOf("only Liquid Vault") }}")
     }
 
     private fun b2Vault(): CheckResult {
@@ -896,7 +882,8 @@ object Runner {
      */
     private fun selfTest(id: String, authority: String, vault: Boolean): CheckResult {
         sideOnly(id, vault)?.let { return it }
-        val tree = DocumentsContract.buildTreeDocumentUri(authority, BridgeProvider.ROOT_DOC)
+        // Phase 2: the bridge shows the other side's storage; the test folder is where hello.txt is (Vault side).
+        val tree = DocumentsContract.buildTreeDocumentUri(authority, CrossBridgeProvider.documentId(TestFolder.PATH))
         val lines = mutableListOf("self-test (no picker): $tree")
         val ok = readTree(tree, lines)
         return r(id, if (ok) CheckStatus.PASS else CheckStatus.FAIL, if (ok) "self-test: the provider lists the test folder and reads hello.txt" else "self-test failed", lines)
@@ -1023,7 +1010,13 @@ object Runner {
         ping?.let { lines += "the other copy answers: ${it.exceptionOrNull()?.asEvidence() ?: "yes"}" }
         var trees = 0
         var treesOk = 0
-        if (!Env.isVaultSide) for (key in listOf(Prefs.B1_TREE, Prefs.B2_TREE)) {
+        // B1's grant pointed at bridge A, retired in 0.3.0: let it go.
+        if (!Env.isVaultSide) Prefs.app.getString(Prefs.B1_TREE, null)?.let { old ->
+            runCatching { Env.app.contentResolver.releasePersistableUriPermission(Uri.parse(old), Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+            Prefs.app.edit().remove(Prefs.B1_TREE).apply()
+            lines += "B1's folder grant: let go (bridge A retired in 0.3.0)"
+        }
+        if (!Env.isVaultSide) for (key in listOf(Prefs.B2_TREE)) {
             val uri = Prefs.app.getString(key, null)?.let(Uri::parse) ?: continue
             trees++
             val sub = mutableListOf<String>()
@@ -1034,7 +1027,7 @@ object Runner {
         }
         val ok = channel && ping?.isSuccess == true && treesOk == trees
         // Phone test 0.1.0: R3 said PASS before B1/B2 had made any folder grant (nothing to check). Say so instead.
-        if (ok && trees == 0 && !Env.isVaultSide) return r("R3", CheckStatus.SKIPPED, "the channel works; no folder grant to check yet: run B1 and B2, then R3 again", lines)
+        if (ok && trees == 0 && !Env.isVaultSide) return r("R3", CheckStatus.SKIPPED, "the channel works; no folder grant to check yet: run B2, then R3 again", lines)
         return r("R3", if (ok) CheckStatus.PASS else CheckStatus.FAIL, if (ok) "channel and $treesOk folder grant(s) work" else "something no longer works", lines)
     }
 

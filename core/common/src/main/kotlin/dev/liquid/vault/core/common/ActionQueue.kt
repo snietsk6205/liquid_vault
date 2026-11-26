@@ -9,6 +9,8 @@ enum class ShellAction(val label: String, val done: String) {
     UNFREEZE("Unfreeze", "unfrozen"),
     SUSPEND("Suspend", "suspended"),
     UNSUSPEND("Unsuspend", "unsuspended"),
+    /** Phase 2: the app's own files ([QueuedAction.arg] is an [OwnFiles] name), D57. */
+    OWN_FILES("Set files of", "set"),
 }
 
 /** An action that waits for the shell (Shevery) when it is off, kept in a file until it is done. */
@@ -22,9 +24,13 @@ data class QueuedAction(
     val createdAt: Long,
     val attempts: Int = 0,
     val lastError: String? = null,
+    /** What the action needs besides the app: for [ShellAction.OWN_FILES], the [OwnFiles] name. */
+    val arg: String? = null,
 ) {
-    /** "Freeze Firefox" — for the Shell card and the log. */
-    val title: String get() = "${action.label} $label"
+    /** "Freeze Firefox", "Firefox: All files" — for the Shell card and the log. */
+    val title: String get() = if (action == ShellAction.OWN_FILES) "$label: ${ownFiles?.label ?: arg} on its side" else "${action.label} $label"
+
+    val ownFiles: OwnFiles? get() = arg?.let { a -> OwnFiles.entries.firstOrNull { it.name == a } }
 }
 
 /** The queue as it is saved: one file, written whole and renamed into place. */
@@ -41,6 +47,7 @@ object ActionQueue {
         ShellAction.UNFREEZE -> ShellAction.FREEZE
         ShellAction.SUSPEND -> ShellAction.UNSUSPEND
         ShellAction.UNSUSPEND -> ShellAction.SUSPEND
+        ShellAction.OWN_FILES -> ShellAction.OWN_FILES
     }
 
     /** What adding an action did, in plain words for the screen. */
@@ -56,6 +63,11 @@ object ActionQueue {
      */
     fun add(queue: List<QueuedAction>, action: QueuedAction): Pair<List<QueuedAction>, Added> {
         fun same(q: QueuedAction) = q.pkg == action.pkg && q.userId == action.userId
+        // The app's own files: the newest choice replaces one still waiting.
+        if (action.action == ShellAction.OWN_FILES) {
+            val waiting = queue.any { same(it) && it.action == ShellAction.OWN_FILES }
+            return queue.filterNot { same(it) && it.action == ShellAction.OWN_FILES } + action to (if (waiting) Added.REPLACED else Added.WAITING)
+        }
         val oppositeWaiting = queue.firstOrNull { same(it) && it.action == opposite(action.action) }
         if (oppositeWaiting != null) return queue.filterNot { it.id == oppositeWaiting.id } to Added.CANCELLED
         val sameWaiting = queue.any { same(it) && it.action == action.action }
@@ -63,11 +75,13 @@ object ActionQueue {
         return queue + action to Added.WAITING
     }
 
-    fun command(a: QueuedAction): List<String> = when (a.action) {
+    /** The shell command; [requested] is what the app asks for (its storage and media permissions, for OWN_FILES). */
+    fun command(a: QueuedAction, requested: List<String> = emptyList()): List<String> = when (a.action) {
         ShellAction.FREEZE -> ShellCommands.disableUser(a.userId, a.pkg)
         ShellAction.UNFREEZE -> ShellCommands.enable(a.userId, a.pkg)
         ShellAction.SUSPEND -> ShellCommands.suspend(a.userId, a.pkg)
         ShellAction.UNSUSPEND -> ShellCommands.unsuspend(a.userId, a.pkg)
+        ShellAction.OWN_FILES -> ShellCommands.ownFiles(a.userId, a.pkg, a.ownFiles ?: error("no files choice for ${a.pkg}"), requested)
     }
 
     /** Whether the shell's answer says the action took effect. */
@@ -76,6 +90,7 @@ object ActionQueue {
         ShellAction.UNFREEZE -> ShellCommands.parseEnabledState(output, a.pkg) in setOf("enabled", "default")
         ShellAction.SUSPEND -> ShellCommands.parseSuspended(output, a.pkg) == true
         ShellAction.UNSUSPEND -> ShellCommands.parseSuspended(output, a.pkg) == false
+        ShellAction.OWN_FILES -> ShellCommands.ownFilesDone(output)
     }
 
     /**

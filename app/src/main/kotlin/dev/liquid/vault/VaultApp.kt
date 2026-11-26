@@ -34,6 +34,9 @@ class VaultApp : Application() {
                 // A Vault set up by an older version gets what it misses (D43); and the shell restriction is noted (D37).
                 runCatching { dev.liquid.vault.admin.VaultSetup.upgrade(this) }.onFailure { DebugLog.error("Setup", "upgrade failed: ${it.message}") }
                 dev.liquid.vault.admin.ShellAccess.noteAtStart(this)
+                // The access rules, in case they changed while the Vault was paused (D59).
+                val app = this
+                CoroutineScope(Dispatchers.IO).launch { dev.liquid.vault.rules.RulesStore.pullFromPersonal(app) }
             }
             AppSide.PERSONAL -> {
                 // Actions that wait for the shell run as soon as Shevery connects or allows this app (D46).

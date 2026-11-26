@@ -118,6 +118,37 @@ object ShellCommands {
     fun uninstallSucceeded(output: String): Boolean = output.lineSequence().any { it.trim() == "Success" }
 
     /**
+     * Phase 2 (D57): a personal app's own files, set by the shell as one script. All files by app-op (allow for "All
+     * files", default for "Android decides", deny otherwise), then each storage or media permission the app asks for
+     * granted ("Photos and media", "All files") or revoked ("No files"); Android refuses some for some apps, so each
+     * line says how it went. "ok all-files" means the app-op was set, which is what makes the action done.
+     */
+    fun ownFiles(userId: Int, packageName: String, own: OwnFiles, requested: List<String>): List<String> {
+        val u = user(userId)
+        val p = pkg(packageName)
+        val mode = when (own) {
+            OwnFiles.ALL -> "allow"
+            OwnFiles.ANDROID -> "default"
+            OwnFiles.NONE, OwnFiles.MEDIA -> "deny"
+        }
+        val lines = mutableListOf("appops set --user $u $p MANAGE_EXTERNAL_STORAGE $mode && echo 'ok all-files'")
+        val verb = when (own) {
+            OwnFiles.MEDIA, OwnFiles.ALL -> "grant"
+            OwnFiles.NONE -> "revoke"
+            OwnFiles.ANDROID -> null
+        }
+        if (verb != null) {
+            for (perm in requested) {
+                require(perm.matches(Regex("^[A-Za-z0-9_.]+$"))) { "not a permission name: $perm" }
+                lines += "pm $verb --user $u $p $perm >/dev/null 2>&1 && echo 'ok $perm' || echo 'no $perm'"
+            }
+        }
+        return listOf("sh", "-c", lines.joinToString("; "))
+    }
+
+    fun ownFilesDone(output: String): Boolean = output.lineSequence().any { it.trim() == "ok all-files" }
+
+    /**
      * The part of a failed `pm` answer worth showing: its first line plus the exception's own message when there is
      * one ("Exception occurred while executing 'hide': java.lang.SecurityException: Neither user 2000 nor current
      * process has android.permission.MANAGE_USERS."), never the stack trace. Null when the shell said nothing.

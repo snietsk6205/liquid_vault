@@ -48,7 +48,11 @@ object Cloning {
             val done = VaultControl.appAction("enable-system", app.pkg)
             if (done.ok) return Outcome(true, "${app.label} is in the Vault (built into the phone: switched on)")
         }
-        val opened = VaultControl.openInVault(activity, VaultActionActivity.DO_CLONE, app.pkg, app.label)
+        // The Vault copy cannot see an app that is only on this side (D55): this copy names its APK files.
+        val apks = runCatching {
+            activity.packageManager.getApplicationInfo(app.pkg, 0).let { listOf(it.sourceDir) + (it.splitSourceDirs?.toList() ?: emptyList()) }
+        }.getOrElse { return Outcome(false, "${app.label}: Android does not show its files to Liquid Vault (${it.asEvidence()})") }
+        val opened = VaultControl.openInVault(activity, VaultActionActivity.DO_CLONE, app.pkg, app.label, apks = apks)
         return if (opened.ok) Outcome(true, "Android asks you in the Vault to install ${app.label}") else opened
     }
 

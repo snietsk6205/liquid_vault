@@ -100,6 +100,9 @@ vault_icon_count() {
 
 vault_icon_shown() { [ "$(vault_icon_count)" -ge 1 ]; }
 
+# The downloaded test app (Shizuku's APK, used as any downloaded app) is installed in the Vault.
+test_app_in_vault() { [ "$(pkg_flag "$VU" moe.shizuku.privileged.api installed)" = "true" ]; }
+
 # check_started <user> <id> <from line> <seconds> : AutomationActivity logs "AUTOMATION-START u<user> <id>" when it runs.
 check_started() {
   local i
@@ -332,6 +335,23 @@ if [ "$PART" = "vault" ]; then
   if printf '%s' "$LAST_ACT" | grep -q "waits for the shell"; then pass "with no shell, a personal freeze waits"; else fail "with no shell, a personal freeze waits"; fi
   run_act 0 personal OK 30 --es do UNFREEZE --es pkg com.android.camera2
   if printf '%s' "$LAST_ACT" | grep -q "waiting: 0"; then pass "unfreeze cancels the waiting freeze"; else fail "unfreeze cancels the waiting freeze"; fi
+
+  # Copying an app you downloaded (not built into the phone) without the shell (0.2.0 step 12, D55): the Vault copy
+  # cannot see an app that is only on the personal side, so the personal copy names its APK files; Android asks first.
+  TEST_APK=$(ls out/shizuku/*.apk 2>/dev/null | head -1)
+  TPKG=moe.shizuku.privileged.api
+  if [ -n "$TEST_APK" ]; then
+    adb install --user 0 -r "$TEST_APK" | tr -d '\r' | tail -1
+    expect_flag "$VU" "$TPKG" installed false "the downloaded test app is only on the personal side"
+    run_act 0 copy OK 60 --es pkg "$TPKG"
+    wait_screen copy-ask "Install" 40 exact
+    if tap_text copy-ask "Install" exact; then pass "Android asks in the Vault to install it"; else fail "Android asks in the Vault to install it"; look copy-ask; fi
+    if wait_until 60 test_app_in_vault; then pass "the downloaded app is in the Vault (installed=true)"; else fail "the downloaded app is in the Vault"; look copy-after; fi
+    wait_log "Vault action: done" 20 || true
+    adb uninstall "$TPKG" | tr -d '\r' | tail -1
+  else
+    fail "a test APK for the copy without the shell (out/shizuku)"
+  fi
 
   section "5. The bridges (self-tests, no picker)"
   run_check "$VU" B0 PASS 30

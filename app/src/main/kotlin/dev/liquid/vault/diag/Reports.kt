@@ -39,7 +39,8 @@ object Reports {
         }
         extra += "Boot record" to listOfNotNull(prefs.getString(Prefs.BOOT_RECORD, null))
         extra += "Bridge access log (last 40)" to Report.accessLines(AccessLog.entries().takeLast(40))
-        extra += "Debug log (last 300 lines)" to DebugLog.format(DebugLog.snapshot().takeLast(300)).lines()
+        val logLines = LogFile.tail(300).ifEmpty { DebugLog.format(DebugLog.snapshot().takeLast(300)).lines() }
+        extra += "Debug log (last 300 lines, across restarts; ! error, · event, → decision)" to logLines
         val defs = PhaseZero.forSide(side == dev.liquid.vault.AppSide.VAULT)
         val mine = Report.render("Liquid Vault — Diagnostics report (${side.label})", facts, defs, CheckStore.book.value.results, extra)
         if (!includeOtherSide) return mine

@@ -6,7 +6,6 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ApplicationInfo
-import android.content.pm.LauncherApps
 import android.content.pm.PackageInstaller
 import android.content.pm.PackageManager
 import android.os.UserManager
@@ -15,6 +14,7 @@ import dev.liquid.vault.admin.OwnerAppOps
 import dev.liquid.vault.core.common.CheckResult
 import dev.liquid.vault.core.common.CheckStatus
 import dev.liquid.vault.core.common.DebugLog
+import dev.liquid.vault.core.common.CopyRules
 import dev.liquid.vault.core.common.asEvidence
 import dev.liquid.vault.diag.CheckStore
 import java.io.File
@@ -25,13 +25,26 @@ import java.io.File
  */
 object Cloner {
     /**
-     * The app's info as installed on the phone. From inside the work profile, LauncherApps may not look at the personal
-     * side (Android 11+ refuses profiles that ask about their parent), but the package manager still describes a package
-     * installed for another user when asked with MATCH_UNINSTALLED_PACKAGES; its APK paths are the same for every user.
+     * The app's info as this copy can see it. Inside the Vault that works only for an app built into the phone: Android
+     * describes an app that is not installed for the asking user only when it is a system app (PackageInfoUtils.
+     * checkUseInstalledOrHidden), and LauncherApps refuses a profile that asks about another profile (LauncherAppsService.
+     * canAccessProfile). An app you downloaded on the personal side is therefore named by the personal copy (D55).
      */
     fun personalAppInfo(context: Context, pkg: String): ApplicationInfo =
         runCatching { context.packageManager.getApplicationInfo(pkg, PackageManager.MATCH_UNINSTALLED_PACKAGES) }.getOrNull()
-            ?: context.getSystemService(LauncherApps::class.java).getApplicationInfo(pkg, 0, Env.personalUser() ?: error("no personal user found"))
+            ?: error("$pkg is not visible from the Vault: only an app built into the phone is; the personal copy must name its files")
+
+    /**
+     * The APK files the personal copy named for [pkg] (D55), checked before anything is installed: absolute `.apk` paths
+     * this copy can read (APKs are readable by every user), the first one being [pkg] itself.
+     */
+    fun checkedApks(context: Context, pkg: String, paths: List<String>): List<String> {
+        CopyRules.apkPathsProblem(paths)?.let { error(it) }
+        paths.firstOrNull { !File(it).canRead() }?.let { error("the Vault cannot read ${File(it).name} ($it)") }
+        val found = context.packageManager.getPackageArchiveInfo(paths.first(), 0)?.packageName
+        if (found != pkg) error("${File(paths.first()).name} is ${found ?: "not an app"}, not $pkg")
+        return paths
+    }
 
     fun installedHere(context: Context, pkg: String): Boolean = runCatching {
         context.packageManager.getApplicationInfo(pkg, 0)
@@ -67,10 +80,13 @@ object Cloner {
      * profile owner first lifts what would block it: the "unknown sources" restriction and this app's own "install apps"
      * app-op. Android may still ask you to confirm; the result arrives in [InstallResultReceiver].
      */
-    fun withInstallerSession(context: Context, pkg: String, purpose: String = PURPOSE_C3): List<String> {
+    fun withInstallerSession(context: Context, pkg: String, purpose: String = PURPOSE_C3, apks: List<String>? = null): List<String> {
         val lines = mutableListOf<String>()
-        val info = personalAppInfo(context, pkg)
-        val files = listOf(info.sourceDir) + (info.splitSourceDirs?.toList() ?: emptyList())
+        val files = if (!apks.isNullOrEmpty()) {
+            checkedApks(context, pkg, apks).also { lines += "APK files named by the personal copy" }
+        } else {
+            personalAppInfo(context, pkg).let { info -> listOf(info.sourceDir) + (info.splitSourceDirs?.toList() ?: emptyList()) }
+        }
         lines += "APK files: " + files.joinToString { "${File(it).name} (${File(it).length() / 1024} KB)" }
 
         runCatching {

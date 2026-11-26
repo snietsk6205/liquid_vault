@@ -14,13 +14,16 @@ class VaultApp : Application() {
         super.onCreate()
         Env.init(this)
         DebugLog.verbosity = LogLevel.DECISION
-        // Every line also goes to logcat under one tag: the emulator test in CI waits for these sentences.
+        // Every line also goes to logcat under one tag (the emulator test in CI waits for these sentences) and to a
+        // file, so a report keeps what happened before a restart (D56).
+        dev.liquid.vault.diag.LogFile.attach(this)
         DebugLog.sink = { e ->
             val priority = when (e.level) {
                 LogLevel.ERROR -> Log.WARN
                 else -> Log.INFO
             }
             Log.println(priority, LOG_TAG, "${e.tag}: ${e.message}")
+            dev.liquid.vault.diag.LogFile.append(e)
         }
         val side = Env.side()
         SideComponents.apply(this, side)

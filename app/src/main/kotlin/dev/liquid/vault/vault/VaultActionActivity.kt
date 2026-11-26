@@ -67,6 +67,8 @@ object VaultActionState {
 
     fun done(ok: Boolean, text: String) {
         _state.value = S.Done(ok, text)
+        // In the log too, so a report (and the emulator test) has how it ended.
+        if (ok) DebugLog.event("Vault action", "done: $text") else DebugLog.error("Vault action", "not done: $text")
         runCatching {
             Prefs.app.edit().putBoolean(Prefs.LAST_ACTION_OK, ok).putString(Prefs.LAST_ACTION_TEXT, text)
                 .putLong(Prefs.LAST_ACTION_AT, System.currentTimeMillis()).apply()
@@ -115,7 +117,8 @@ class VaultActionActivity : ComponentActivity() {
                 pkg ?: return false
                 VaultActionState.working("Copying $label into the Vault…")
                 lifecycleScope.launch(Dispatchers.IO) {
-                    runCatching { Cloner.withInstallerSession(this@VaultActionActivity, pkg, Cloner.PURPOSE_ACTION) }
+                    val apks = intent.getStringArrayExtra(EXTRA_APKS)?.toList()
+                    runCatching { Cloner.withInstallerSession(this@VaultActionActivity, pkg, Cloner.PURPOSE_ACTION, apks) }
                         .onFailure { VaultActionState.done(false, "could not start the copy: ${it.asEvidence()}") }
                 }
             }
@@ -147,6 +150,8 @@ class VaultActionActivity : ComponentActivity() {
         const val EXTRA_PKG = "dev.liquid.vault.extra.ACTION_PKG"
         const val EXTRA_LABEL = "dev.liquid.vault.extra.ACTION_LABEL"
         const val EXTRA_SCREEN = "dev.liquid.vault.extra.ACTION_SCREEN"
+        /** The app's APK files, named by the personal copy (the Vault copy cannot see a downloaded personal app, D55). */
+        const val EXTRA_APKS = "dev.liquid.vault.extra.ACTION_APKS"
         const val DO_CLONE = "clone"
         const val DO_UNINSTALL = "uninstall"
         const val DO_PASSWORD = "password"

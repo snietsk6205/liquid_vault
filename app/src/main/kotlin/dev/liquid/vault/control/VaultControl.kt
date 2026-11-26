@@ -97,7 +97,7 @@ object VaultControl {
      * Opens a screen in the Vault copy (D43): it asks the Vault copy for a one-time token through the channel, then
      * sends the request through the owner's cross-profile filter. [what] is one of VaultActionActivity's DO_ values.
      */
-    suspend fun openInVault(activity: Activity, what: String, pkg: String? = null, label: String? = null, screen: String? = null): Outcome {
+    suspend fun openInVault(activity: Activity, what: String, pkg: String? = null, label: String? = null, screen: String? = null, apks: List<String>? = null): Outcome {
         val token = attempt { call("vaultToken")?.getString("token") }.getOrElse { return Outcome(false, it.message ?: it.asEvidence()) }
             ?: return Outcome(false, "the Vault copy gave no token")
         val intent = Intent(VaultActionActivity.ACTION).addCategory(Intent.CATEGORY_DEFAULT)
@@ -106,6 +106,7 @@ object VaultControl {
             .putExtra(VaultActionActivity.EXTRA_PKG, pkg)
             .putExtra(VaultActionActivity.EXTRA_LABEL, label)
             .putExtra(VaultActionActivity.EXTRA_SCREEN, screen)
+            .putExtra(VaultActionActivity.EXTRA_APKS, apks?.toTypedArray())
         return withContext(Dispatchers.Main) {
             try {
                 activity.startActivity(intent)

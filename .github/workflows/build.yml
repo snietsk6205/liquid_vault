@@ -195,8 +195,8 @@ jobs:
           name: apk
           path: out
 
-      - name: Official Shizuku (shell part)
-        if: matrix.part == 'shell'
+      # The shell part runs it; the vault part installs it on the personal side only, as an app you downloaded (D55).
+      - name: Official Shizuku APK
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

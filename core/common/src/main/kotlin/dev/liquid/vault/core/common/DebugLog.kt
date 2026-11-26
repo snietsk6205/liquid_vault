@@ -6,8 +6,11 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/** Ordered by verbosity: a level is recorded when it is at or below [DebugLog.verbosity]. */
-enum class LogLevel { ERROR, EVENT, DECISION, TREE }
+/**
+ * Ordered by verbosity: a level is recorded when it is at or below [DebugLog.verbosity]. [mark] is how a line shows its
+ * level in the log and the report: errors must stand out ("E" was both ERROR and EVENT before 0.3.0).
+ */
+enum class LogLevel(val mark: String) { ERROR("!"), EVENT("·"), DECISION("→"), TREE(" ") }
 
 data class LogEntry(
     val wallTime: Long,
@@ -58,8 +61,13 @@ object DebugLog {
 
     fun format(entries: List<LogEntry> = snapshot()): String {
         val time = SimpleDateFormat("HH:mm:ss.SSS", Locale.US)
-        return entries.joinToString("\n") { e ->
-            "${time.format(Date(e.wallTime))} ${e.level.name.first()} ${e.tag}: ${e.message}"
-        }
+        return entries.joinToString("\n") { e -> line(e, time) }
     }
+
+    /** One line: time, level mark (! error, · event, → decision), tag and message. */
+    fun line(e: LogEntry, time: SimpleDateFormat = SimpleDateFormat("HH:mm:ss.SSS", Locale.US)): String =
+        "${time.format(Date(e.wallTime))} ${e.level.mark} ${e.tag}: ${e.message.replace('\n', ' ')}"
+
+    /** The same line with the date, for the log kept on disk across restarts. */
+    fun dated(e: LogEntry): String = line(e, SimpleDateFormat("MM-dd HH:mm:ss.SSS", Locale.US))
 }

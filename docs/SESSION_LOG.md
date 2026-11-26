@@ -109,8 +109,8 @@ vault apps seems hard; in the future phases do you plan on making it better?"
 | 2 | 0.1.1 phone results | Recorded | D37–D41: "no debugging features" gone by itself; silent clone works; F1/F2 PASS with Aves; F4/F5 really passed (verdict fixed); F6/F7 retired; clearer test steps. |
 | 3 | Med's questions | Answered | F6/F7 not needed; the storage section's results explained; Phase 1 replaces Diagnostics with real screens. |
 | 4 | Phase 1 | Built | Home, Apps, the Vault's lock, VPN, Settings, What's new; VaultService + VaultActionActivity; waiting-actions queue; boot reminders; Vault copy icon hidden (Q4). 41 JVM unit tests. |
-| 5 | Phase 1 emulator test | Fixed, re-run | Run 15: the Vault part passed; the shell part showed the shell may not `pm hide` (MANAGE_USERS). Personal Freeze now turns the app off (`pm disable-user`, D54); the frozen state is read from Android, so apps turned off in Settings show as Frozen too. 43 JVM unit tests. |
-| 6 | Release 0.2.0 | See below | |
+| 5 | Phase 1 emulator test | Shell part passed (run 16) | Run 15: the Vault part passed; the shell part showed the shell may not `pm hide` (MANAGE_USERS). Personal Freeze now turns the app off (`pm disable-user`, D54); the frozen state is read from Android, so apps turned off in Settings show as Frozen too. Run 16: the shell part passed (the shell turns Camera off and on, Android's record says so, the Apps list shows Frozen and back); the Vault part was still running when this was written. 43 JVM unit tests. A call to the Vault copy that its screen no longer waits for now ends quietly instead of logging "could not list the Vault's apps". |
+| 6 | Release 0.2.0 | Release commit | CI runs both emulator parts again and publishes only if they pass. |
 
 **Known limits**
 - Not tested on stock Android in CI: the installer-session copy and Android's uninstall question (they need taps on

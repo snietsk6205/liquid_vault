@@ -9,7 +9,7 @@ what Med tests on the phone is in `TESTING.md`.*
 | Phase | State |
 |---|---|
 | 0. Proof (Diagnostics) | **Done.** Phone tests of 0.1.0 and 0.1.1 (results: `DECISIONS.md` D25–D41). Still open, not blocking: B3 (refused app), D1/V2 (destroy, shell create: in Phase 1's test), the cause of "no debugging features" coming and going (D37). |
-| 1. Vault core | **Built** (release 0.2.0): Home, Apps (both sides), the Vault's lock, VPN, settings, the waiting-actions queue, boot reminders. **Gate:** Med's test (`TESTING.md` § Phase 1). Decisions D42–D53, questions Q5–Q6. |
+| 1. Vault core | **Built** (release 0.2.0): Home, Apps (both sides), the Vault's lock, VPN, settings, the waiting-actions queue, boot reminders. **Gate:** Med's test (`TESTING.md` § Phase 1). Decisions D42–D54, questions Q5–Q6. |
 | 2. Access rules | Not started |
 | 3. File manager | Not started |
 | 4. Design | Not started (Phase 0 already uses the kit's settings look) |
@@ -142,7 +142,7 @@ default: closed); storage and media rules for Vault apps by the owner's permissi
 D28–D30); bridge B (Q3).
 
 Create/destroy (the winning path from V1/V2), app lists for both sides, clone (winning method), freeze
-(`setApplicationHidden`), hide, suspend (`setPackagesSuspended`), pause/resume, per-side VPN (`setAlwaysOnVpnPackage`
+(Vault: `setApplicationHidden`; personal: the shell's `pm disable-user`, D54), hide, suspend (`setPackagesSuspended`), pause/resume, per-side VPN (`setAlwaysOnVpnPackage`
 in the Vault; personal side through the shell or the system setting), Vault password (separate work challenge, test
 whether MagicOS locks storage), reboot-safe behaviour, **Shell status** card, **action queue** for shell-only actions
 (applied when the shell is back), optional Wireless-debugging restart at boot with `WRITE_SECURE_SETTINGS`. The Vault

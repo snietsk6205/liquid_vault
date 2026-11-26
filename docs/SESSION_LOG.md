@@ -96,3 +96,30 @@ second copy of the Vault report is cut off; the first copy is complete.
 
 **Exact next step (0.1.1 part)**: Med runs `TESTING.md` § Phase 0 re-run and sends the report; if P2 says the owner
 cannot lift "no debugging features", that is recorded as MagicOS behaviour and Q5 closes as "the shell stays out".
+
+### Session 2, continued — 2026-11-26 · 0.1.1 report, then Phase 1 (release 0.2.0)
+
+**Asked** (after a usage-limit pause): "continue from where you left off"; Med sent the 0.1.1 reports and wrote: "i
+don't understand f6 and f7 in personal space, also storage for vault app, the instructions are ambiguous … using the
+vault apps seems hard; in the future phases do you plan on making it better?"
+
+| # | Point | State | What |
+|---|---|---|---|
+| 1 | 0.1.1 release | Done | Run 14: build, both emulator parts (P2 end to end: the owner blocks the shell, adb gets the phone's C2 error, the owner lets it back in) and the release passed. |
+| 2 | 0.1.1 phone results | Recorded | D37–D41: "no debugging features" gone by itself; silent clone works; F1/F2 PASS with Aves; F4/F5 really passed (verdict fixed); F6/F7 retired; clearer test steps. |
+| 3 | Med's questions | Answered | F6/F7 not needed; the storage section's results explained; Phase 1 replaces Diagnostics with real screens. |
+| 4 | Phase 1 | Built | Home, Apps, the Vault's lock, VPN, Settings, What's new; VaultService + VaultActionActivity; waiting-actions queue; boot reminders; Vault copy icon hidden (Q4). 41 JVM unit tests. |
+| 5 | Phase 1 emulator test | See CI | AutomationActivity actions checked with `dumpsys package`. |
+| 6 | Release 0.2.0 | See below | |
+
+**Known limits**
+- Not tested on stock Android in CI: the installer-session copy and Android's uninstall question (they need taps on
+  Android's dialogs), the Vault's own lock (it needs a PIN typed into Android's screen), VPN with a real VPN app.
+  These are in TESTING § Phase 1.
+- Personal apps frozen by another app than Liquid Vault are not listed (Android lists frozen apps nowhere).
+- B3 (an app refused by the bridge) is still not run on the phone; it belongs to Phase 2.
+
+**Questions for Med**: Q5 (let the shell into the Vault: moot while the phone does not set "no debugging features"),
+Q6 (what "hide" means).
+
+**Exact next step**: Med tests 0.2.0 (`TESTING.md` § Phase 1) and sends the report. Then Phase 2 (access rules).

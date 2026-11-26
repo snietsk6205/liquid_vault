@@ -2,6 +2,35 @@
 
 All notable changes to Liquid Vault, newest first. Each version's section is also its release notes on GitHub.
 
+## 0.2.0 — 2026-11-26
+
+*Phase 1: the Vault's core. Liquid Vault opens on a real Home screen; Diagnostics moved under More.*
+
+### Added
+- **Home**: the Vault (running or paused, how many apps, whether it has a lock of its own) with **Pause**,
+  **Resume** and **Lock now**; your apps; the shell (Shevery) and the actions waiting for it; and under **More**:
+  VPN, the Vault's lock, Settings, Diagnostics, What's new and Destroy the Vault.
+- **Apps**: a **Vault** tab and a **Personal** tab with search. Tap an app for what you can do with it:
+  - Vault apps: **Open**, **Freeze** (gone from your apps until you unfreeze it; its data stays), **Suspend** (its
+    icon stays grey and it cannot open), **App info**, **Remove from the Vault** (you type REMOVE first).
+  - Personal apps: **Copy into the Vault** (silently with the shell when it can reach the Vault; built-in apps are
+    switched on without copying; otherwise Android asks you once), **Freeze**, **Suspend**.
+- **Actions that wait for the shell**: freezing or suspending a personal app needs Shevery. When it is off, the
+  action waits (Home shows it) and happens by itself as soon as Shevery starts. Doing the opposite meanwhile cancels it.
+- **The Vault's lock**: give the Vault a lock of its own (Android's screen opens in the Vault), and **Lock now**.
+- **VPN**: an always-on VPN for the Vault's apps only (a VPN app installed in the Vault), with an option to block their
+  internet while it is not connected; your normal apps' VPN in Android's settings.
+- **Settings**: show Liquid Vault's own copy in the Work tab; at boot, turn wireless debugging on (after a one-time
+  adb permission) and remind you to start Shevery.
+- **What's new** shows this list in the app.
+
+### Changed
+- Liquid Vault's own copy inside the Vault no longer has an icon in the Work tab (you control everything from the
+  personal side). Settings brings it back.
+- Diagnostics: F6/F7 are gone (F4/F5 showed the owner does it without the shell), and F4/F5 count only what app-ops
+  really control on your phone (All files and a test switch); storage and photos are controlled by permissions (F1/F2).
+- The Vault copy notes whether Android keeps the shell out of the Vault ("no debugging features") every time it starts.
+
 ## 0.1.1 — 2026-11-25
 
 *Fixes for the Phase 0 phone test (what each result meant: `DECISIONS.md` D25–D36).*

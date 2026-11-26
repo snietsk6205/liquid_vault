@@ -8,8 +8,8 @@ what Med tests on the phone is in `TESTING.md`.*
 
 | Phase | State |
 |---|---|
-| 0. Proof (Diagnostics) | **Phone test done** (0.1.0, Med's report 2026-11-25; every result in `DECISIONS.md` D25–D36). **0.1.1** fixes the test bugs it found and adds P2 (the shell and the Vault); Med re-runs only the changed checks (`TESTING.md` § Phase 0 re-run). Nothing found blocks Phase 1. |
-| 1. Vault core | Started 2026-11-25 (session 2), after the Phase 0 report |
+| 0. Proof (Diagnostics) | **Done.** Phone tests of 0.1.0 and 0.1.1 (results: `DECISIONS.md` D25–D41). Still open, not blocking: B3 (refused app), D1/V2 (destroy, shell create: in Phase 1's test), the cause of "no debugging features" coming and going (D37). |
+| 1. Vault core | **Built** (release 0.2.0): Home, Apps (both sides), the Vault's lock, VPN, settings, the waiting-actions queue, boot reminders. **Gate:** Med's test (`TESTING.md` § Phase 1). Decisions D42–D53, questions Q5–Q6. |
 | 2. Access rules | Not started |
 | 3. File manager | Not started |
 | 4. Design | Not started (Phase 0 already uses the kit's settings look) |
@@ -121,7 +121,19 @@ Summary (details and evidence: `DECISIONS.md` D25–D36):
 2. `TESTING.md` § Phase 0: exact fish/adb commands and taps, in order, ending with the two copied reports.
 3. Stop; wait for Med's report. Record every result in `DECISIONS.md` (which mechanisms work on MagicOS).
 
-## Phase 1 — Vault core (after the Phase 0 report)
+## Phase 1 — Vault core (built in 0.2.0)
+
+**As built** (D42–D53): the personal copy is the app. **Home**: the Vault card (state, pause/resume, lock now, create
+when there is none), Apps (Vault and Personal), the Shell card (Shevery's state, whether the Vault lets the shell in,
+wireless debugging, the actions waiting for the shell), More (VPN, the Vault's lock, Settings, Diagnostics, What's
+new, Destroy). **Apps**: two tabs with search; per app a sheet: Vault apps → Open, Freeze, Suspend, App info, Remove
+(typed REMOVE); personal apps → Copy into the Vault (shell, built-in switch-on, or installer with Android's question),
+Freeze, Suspend (through the shell, queued while it is off). The Vault copy answers through the channel
+(`VaultService`) and shows screens in the Vault through `VaultActionActivity` (one-time token, D43); its icon is
+hidden by default (D51).
+
+**Not in Phase 1** (later phases): access rules and the bridge's real rules (Phase 2), the file manager (Phase 3), the
+liquid design and the settings registry (Phase 4), launcher integration (Phase 5).
 
 From the phone results: create with Android's setup (V1), the shell way only as a fallback; clone built-in apps by
 switching them on (C4's `enableSystemApp`, nothing copied, D34), other apps with the installer session (C3, Android

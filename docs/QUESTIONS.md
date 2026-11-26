@@ -1,6 +1,6 @@
 # Questions for Med
 
-One open question (Q5); work goes on with its default meanwhile. Answered ones stay here with Med's answer; the design
+Two open questions (Q5, Q6); work goes on with their defaults meanwhile. Answered ones stay here with Med's answer; the design
 follows the answer.
 
 | # | Question | Answer |
@@ -10,6 +10,7 @@ follows the answer.
 | Q3 | **Bridge A's side effect.** Opening the picker's Work tab to personal apps may also show the Vault's own folders (Internal storage, Images…) to any personal app you pick with; Diagnostics asks what you saw. If bridge B works on your phone, should Phase 2 use only B and keep the Work tab closed? | Yes (the default): prefer B; A only if B fails on MagicOS. |
 | Q4 | **The Vault copy's icon** in the Work tab of your launcher: needed in Phase 0 (its Diagnostics). Hide it in Phase 1 (opened from the personal copy instead)? | Yes (the default): hide it in Phase 1, with an option to show it. |
 | Q5 | **Let the shell into the Vault?** (open; matters only if P2 shows the owner can lift "no debugging features", D26) On your phone the Vault keeps the shell out. With the shell let in, cloning is silent (`pm install-existing`, no "install?" question) and the shell can change Vault apps' app-ops, but adb, Shevery and every app you allow in Shevery can also act inside the Vault (list, install and remove its apps, start them, read its shared storage; never other apps' private data). **(A, recommended)** keep it closed by default; Phase 1 clones with the installer session (one Android "install?" per app) and switches built-in apps on with no copy; a switch **Let the shell into the Vault** in the Shell card opens it while you want it and closes it again when off. **(B)** open it when the Vault is set up, for silent cloning whenever Shevery runs. | — (default A meanwhile) |
+| Q6 | **"Hide" apps** (open). The brief says "clone, freeze, hide and pause apps". Android has two states Liquid Vault can set: **frozen** (hidden: gone from launchers, cannot run, data kept) and **suspended** (icon stays grey, cannot open). Phase 1 offers Freeze and Suspend on both sides, and reads "hide" as Freeze. **(A, recommended)** keep it that way. **(B)** "hide" means something else for you (for example: only the icon disappears while the app keeps running, like a VPN or sync app): say which apps, and I will look for a way (Android gives the owner no "icon only" switch for other apps; the shell can turn off an app's launcher entry). | — (default A meanwhile) |
 
 ## Q1: the commands (fish shell, on your Linux PC) — done with option A
 
@@ -65,3 +66,4 @@ gh secret set SIGNING_KEY_ALIAS -R snietsk6205/liquid_vault --body liquid
 Either way, the next CI run prints "Signing: with the release key from the secrets" (and the names, never the values,
 of the secrets it found). Then the release can be published: say so, or start it yourself with **Actions › Build › Run
 workflow**, branch `claude/liquid-vault-android-gxlze8`, "Publish a release" ticked.
+

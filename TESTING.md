@@ -4,6 +4,95 @@ One section per phase gate. Do the steps in order; each says what you should see
 (fish shell) with the phone on USB (or wireless) debugging; everything else is taps. When you are done, send me the
 reports (step 30) and anything that surprised you (a screenshot helps).
 
+## Phase 1 — The Vault's core (release 0.2.0)
+
+About 30 minutes. Keep your Vault as it is. Each step says what to tap and what you should see; if something looks
+different, note the step number and what you saw. You do not need Diagnostics for this test until the last step.
+
+Two words used below: **Freeze** = the app disappears from your apps and cannot run, nothing of it is deleted.
+**Suspend** = its icon stays, grey, and it cannot open, nothing is deleted.
+
+### Install
+
+1. Install 0.2.0 over 0.1.1 (the APK from the release page). One install updates both copies:
+
+   ```fish
+   adb install -r ~/Downloads/LiquidVault-0.2.0-build*.apk
+   ```
+
+2. Open **Liquid Vault** (your normal icon). It opens on **Home** now, with three parts: **The Vault**, **Apps** and
+   **The shell (Shevery)**, then **More**. In your launcher's **Work** tab, Liquid Vault's own icon is gone: that is
+   on purpose (step 15 brings it back if you want it). If Liquid Vault's icon also left your home screen, add it again
+   from the app drawer: its launcher entry has a new name (that is what lets the Vault copy hide its icon).
+
+### The Vault card
+
+3. The card says **Running · N apps** (N = how many apps the Vault has). Tap **Pause**: the card says **Paused** and
+   the Work tab's apps turn grey. Tap **Resume**: back to **Running** (Android may ask for your PIN first).
+
+### Vault apps
+
+4. Home › **Vault apps**. You see the Vault's apps with the work badge, a search field, and two tabs at the top:
+   **Vault** and **Personal**.
+5. Tap **Komikku** (or any app you don't mind). A sheet opens: **Open**, **Freeze**, **Suspend**, **App info**,
+   **Remove from the Vault**. Tap **Freeze**: a message says it is frozen, the app vanishes from the Work tab, and in
+   the list it is greyed with **Frozen** under its name.
+6. Tap it again › **Unfreeze**: it is back in the Work tab.
+7. Tap it › **Suspend**: in the Work tab its icon is grey and opening it shows Android's "paused" message. Tap it in
+   the list › **Unsuspend**.
+8. Tap it › **Open**: it starts (in the Vault).
+
+### Personal apps
+
+9. Switch to the **Personal** tab. Apps that are also in the Vault say **In the Vault too**.
+10. With Shevery running: tap an app that is not in the Vault yet (a small one, for example a calculator) › **Copy into
+    the Vault**. Expect "copied silently by the shell" and no question from Android; it shows up in the **Vault** tab.
+11. The waiting list (the shell off): open Shevery and stop it. In Liquid Vault, Personal tab › that same small app ›
+    **Freeze**. Expect "Freeze … waits for the shell". Back on **Home**, the shell part lists it ("Waits for the
+    shell"). Start Shevery again, then swipe Liquid Vault away from recents and open it: the list is empty and the
+    app is gone from your normal apps. Apps › Personal › the app (it says **Frozen**) › **Unfreeze**.
+
+### Copying without the shell
+
+12. With Shevery stopped: Apps › Personal › an app that is not in the Vault and that you downloaded yourself ›
+    **Copy into the Vault**. Android asks "Do you want to install this app?" (in the Vault): **Install**. A small card
+    says **Done**; the app is in the Vault tab. Start Shevery again afterwards.
+
+### Removing
+
+13. Apps › Vault › the app you copied in step 10 or 12 › **Remove from the Vault**. Type **REMOVE** › **Remove**.
+    It leaves the Vault (with the shell: silently; without: Android asks first). Your normal copy stays.
+
+### The Vault's own lock
+
+14. Home › More › **The Vault's lock** › **Set a lock**. Android's screen opens in the Vault: choose a PIN different
+    from your phone's (Android may first ask whether to use one lock: choose the Vault's own). Back in Liquid Vault the
+    page says **A lock of its own**. Tap **Lock now**, then open a Vault app: it must ask for the Vault's PIN.
+    Optional, to see whether MagicOS keeps the Vault's files closed: restart the phone and unlock only the phone (not
+    the Vault). Open any app's file picker (for example Gmail › attach file), side menu › **Liquid Vault**: write
+    down whether it shows the test folder or nothing. Then unlock the Vault and look again.
+    If you don't want the lock: same page › **Change it** › choose **None**.
+
+### Settings and boot
+
+15. Home › More › **Settings**:
+    - **Show Liquid Vault in the Work tab**: on → its icon comes back in the Work tab; off → gone again.
+    - **Remind me to start Shevery**: turn it on and allow notifications. Restart the phone: after unlocking, a
+      notification **Start Shevery** appears; tapping it opens Shevery.
+    - Optional: **Turn wireless debugging on** needs a one-time permission first (the page shows the adb command and a
+      **Copy the command** button). With it, wireless debugging is on after a restart.
+
+### VPN (only if you use a VPN app)
+
+16. Copy your VPN app into the Vault (step 10), open it in the Vault once and sign in. Home › More › **VPN**: choose it
+    › **Apply**. A browser in the Vault now shows the VPN's address (search "what is my IP"); a browser on the personal
+    side shows your normal one.
+
+### Report
+
+17. Home › More › **Diagnostics** › **Copy report**, and send it to me with: the step numbers where you saw something
+    else than written, and in a few words what still feels hard.
+
 ## Phase 0 re-run (release 0.1.1): only the changed checks
 
 About 25 minutes. Keep the Vault you have (no need to destroy or recreate it). Results of 0.1.0 stay in each copy; the

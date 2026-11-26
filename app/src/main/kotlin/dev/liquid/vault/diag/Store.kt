@@ -34,6 +34,25 @@ object Prefs {
     const val F8_PENDING_BEFORE = "f8_pending_before"
     /** + a package name: that Vault app's own app-op entries before F6/F7 first changed them (StorageOps.encode). */
     const val SHELL_OPS_BEFORE = "shell_ops_before:"
+    /** + a package name: that Vault app's app-op modes before F4/F5 first changed them, as the owner read them. */
+    const val OWNER_OPS_BEFORE = "owner_ops_before:"
+    /** When this copy (the Vault's owner) last lifted "no debugging features" (P2). */
+    const val P2_LIFTED_AT = "p2_lifted_at"
+
+    // ---- Phase 1 ----
+    /** Vault copy: which version of the owner's setup this Vault has (2 adds the Vault-action filter, D43). */
+    const val SETUP_VERSION = "setup_version"
+    /** Vault copy: show its own icon in the Work tab (Q4: hidden by default). */
+    const val VAULT_ICON_VISIBLE = "vault_icon_visible"
+    /** Vault copy: how the last foreground action ended (VaultActionActivity), for the personal copy. */
+    const val LAST_ACTION_OK = "last_action_ok"
+    const val LAST_ACTION_TEXT = "last_action_text"
+    const val LAST_ACTION_AT = "last_action_at"
+    /** Personal copy, options (D50): at boot, turn wireless debugging on; at boot, remind to start Shevery. */
+    const val OPT_BOOT_WIRELESS_DEBUGGING = "opt_boot_wireless_debugging"
+    const val OPT_BOOT_REMIND_SHELL = "opt_boot_remind_shell"
+    /** Vault copy: the last "no debugging features" state it saw, and when it changed (D37). */
+    const val SHELL_BLOCKED_SEEN = "shell_blocked_seen"
 
     fun of(context: Context): SharedPreferences = context.getSharedPreferences("vault", Context.MODE_PRIVATE)
     val app: SharedPreferences get() = of(Env.app)

@@ -38,6 +38,7 @@ run_check() {
     sleep 0.5
   done
   if [ -z "$line" ]; then
+    LAST_STATUS=""
     note_wait "$start" 1 "check $id (user $user)"
     fail "$id (user $user): no result within $secs s"
     look "no-result-$id-u$user" 25
@@ -45,10 +46,59 @@ run_check() {
   fi
   note_wait "$start" 0 "check $id (user $user)"
   status=$(printf '%s' "$line" | sed -E "s/.*AUTOMATION u$user $id ([A-Z_]+) .*/\1/")
+  LAST_STATUS=$status
   echo "     ${line#*AUTOMATION }" | cut -c1-260
   tail -n +$((from + 1)) "$LOG" | grep "AUTOMATION   " | head -14 | sed -E 's/.*AUTOMATION   /         /' | cut -c1-220
   if printf '%s' "$status" | grep -qE "^($want)$"; then pass "$id (user $user): $status"; else fail "$id (user $user): $status, expected $want"; fi
 }
+
+# run_act <user> <act> <want: OK|FAIL regex> <seconds> [am extras…] : a Phase 1 action through AutomationActivity (the
+# same code the screens use); it logs "AUTOMATION-ACT u<user> <act> <OK|FAIL> — <words>", kept in LAST_ACT.
+run_act() {
+  local user=$1 act=$2 want=$3 secs=$4
+  shift 4
+  local from line="" status start
+  from=$(wc -l < "$LOG")
+  adb shell am start --user "$user" -n "$PKG/.automation.AutomationActivity" --es act "$act" "$@" > /dev/null 2>&1
+  start=$SECONDS
+  while [ $((SECONDS - start)) -lt "$secs" ]; do
+    line=$(tail -n +$((from + 1)) "$LOG" | grep -m1 "AUTOMATION-ACT u$user $act ") && break
+    sleep 0.5
+  done
+  if [ -z "$line" ]; then
+    LAST_ACT=""
+    note_wait "$start" 1 "act $act (user $user)"
+    fail "act $act $* (user $user): no answer within $secs s"
+    look "no-act-$act-u$user" 25
+    return 1
+  fi
+  note_wait "$start" 0 "act $act (user $user)"
+  LAST_ACT=${line#*AUTOMATION-ACT }
+  echo "     $LAST_ACT" | cut -c1-240
+  status=$(printf '%s' "$line" | sed -E "s/.*AUTOMATION-ACT u$user $act (OK|FAIL) .*/\1/")
+  if printf '%s' "$status" | grep -qE "^($want)$"; then pass "act $act $* (user $user): $status"; else fail "act $act $* (user $user): $status, expected $want"; fi
+}
+
+# pkg_flag <user> <pkg> <flag> : the value of hidden, suspended, installed (true/false) or enabled (0 default,
+# 1 on, 3 turned off by the user) on dumpsys package's line for the user.
+pkg_flag() {
+  adb shell dumpsys package "$2" 2>/dev/null | tr -d '\r' | grep -m1 -E "^ +User $1: " | grep -oE " $3=[^ ]+" | head -1 | cut -d= -f2
+}
+
+# expect_flag <user> <pkg> <flag> <value> <what> : checks what Android itself says about the app.
+expect_flag() {
+  local v
+  v=$(pkg_flag "$1" "$2" "$3")
+  if [ "$v" = "$4" ]; then pass "$5 ($3=$v)"; else fail "$5 ($3=${v:-?}, expected $4)"; fi
+}
+
+# The Vault copy's launcher entries in the Vault (Q4: none by default).
+vault_icon_count() {
+  adb shell cmd package query-activities --components --user "$VU" -a android.intent.action.MAIN -c android.intent.category.LAUNCHER 2>/dev/null \
+    | tr -d '\r' | grep -c "^[[:space:]]*$PKG/"
+}
+
+vault_icon_shown() { [ "$(vault_icon_count)" -ge 1 ]; }
 
 # check_started <user> <id> <from line> <seconds> : AutomationActivity logs "AUTOMATION-START u<user> <id>" when it runs.
 check_started() {
@@ -86,15 +136,27 @@ vault_launchables() {
     | grep -v -E "^($PKG|com.android.settings|com.android.documentsui|com.google.android.documentsui|com.google.android.apps.nexuslauncher|com.android.launcher3)$"
 }
 
-# A launchable Vault app that asks for storage or media access (for the F checks), else nothing.
+# A launchable Vault app that asks for photo access (F1/F2 can show the policy with it), else one that asks for storage,
+# else nothing.
 storage_app_in_vault() {
-  local p
-  vault_launchables | while read -r p; do
-    if adb shell dumpsys package "$p" 2>/dev/null | grep -q -E "android.permission.(READ_MEDIA_IMAGES|READ_EXTERNAL_STORAGE)"; then
-      echo "$p"
-      break
-    fi
+  local p apps
+  apps=$(vault_launchables)
+  for want in "android.permission.READ_MEDIA_IMAGES" "android.permission.READ_EXTERNAL_STORAGE"; do
+    for p in $apps; do
+      if adb shell dumpsys package "$p" 2>/dev/null | grep -q "$want"; then echo "$p"; return; fi
+    done
   done
+}
+
+# until_unlocked <user> <seconds> : waits until Android reports the user running and unlocked (after a boot or a resume).
+until_unlocked() {
+  wait_until "$2" sh -c "adb shell am get-started-user-state $1 2>/dev/null | grep -q RUNNING_UNLOCKED"
+}
+
+# The shell's view of the Vault: adb is refused there while the Vault has "no debugging features" (the phone's C2 error).
+shell_reaches_vault() {
+  adb shell pm list packages --user "$VU" "$PKG" 2>&1 | tr -d '\r' > "$OUT/shell-reach.txt"
+  grep -q "^package:$PKG\$" "$OUT/shell-reach.txt"
 }
 
 # A slow emulator can show "<app> isn't responding": tap Wait (the skill's advice: detect it, dismiss it, note it).
@@ -186,6 +248,22 @@ if [ "$PART" = "vault" ]; then
   run_check 0 L1 PASS 30
   run_check "$VU" L1 PASS 30
 
+  section "3b. Shell access to the Vault (P2)"
+  # Stock Android puts no "no debugging features" on a new work profile (the phone's MagicOS did: C2). The owner puts
+  # it on (asked by the personal copy through the channel, as adb cannot start the Vault copy once it is on), adb is
+  # then refused in the Vault with the phone's exact error, and the owner lifts it again.
+  run_check "$VU" P2 PASS 30
+  if shell_reaches_vault; then pass "adb reaches the Vault"; else fail "adb reaches the Vault"; cat "$OUT/shell-reach.txt" | head -3; fi
+  run_check 0 P2 SKIPPED 40 --es vault block
+  if ! shell_reaches_vault && grep -q "Shell does not have permission to access user $VU" "$OUT/shell-reach.txt"; then
+    pass "with \"no debugging features\" on, Android refuses adb in the Vault (the phone's C2 error)"
+  else
+    fail "with \"no debugging features\" on, Android refuses adb in the Vault (the phone's C2 error)"; head -3 "$OUT/shell-reach.txt"
+  fi
+  run_check 0 P2 SKIPPED 40 --es vault lift
+  if shell_reaches_vault; then pass "after \"Let the shell in\", adb reaches the Vault again"; else fail "after \"Let the shell in\", adb reaches the Vault again"; head -3 "$OUT/shell-reach.txt"; fi
+  run_check "$VU" P2 PASS 30
+
   section "4. Profile owner: policy, All files, clone"
   run_check "$VU" P1 PASS 30
   run_check "$VU" F8 PASS 30
@@ -202,20 +280,58 @@ if [ "$PART" = "vault" ]; then
   FAPP=$(storage_app_in_vault)
   if [ -n "$FAPP" ]; then
     note "Vault app for the storage checks: $FAPP (it asks for storage or media access)"
-    run_check "$VU" F1 NEEDS_YOU 30 --es vaultApp "$FAPP"
-    run_check "$VU" F1 PASS 20 --es answer 0
-    run_check "$VU" F2 NEEDS_YOU 30
-    run_check "$VU" F2 "NEEDS_YOU|PASS" 30 --es undo true
-    run_check "$VU" F4 NEEDS_YOU 30
-    run_check "$VU" F5 NEEDS_YOU 30
-    run_check "$VU" F5 "NEEDS_YOU|PASS" 30 --es undo true
+    # An app built for Android 13+ that asks for no photo permission cannot show the policy: F1 says SKIPPED (0.1.1).
+    run_check "$VU" F1 "NEEDS_YOU|SKIPPED" 30 --es vaultApp "$FAPP"
+    if [ "$LAST_STATUS" = "NEEDS_YOU" ]; then
+      run_check "$VU" F1 PASS 20 --es answer 0
+      run_check "$VU" F2 NEEDS_YOU 30
+      run_check "$VU" F2 "NEEDS_YOU|PASS" 30 --es undo true
+    fi
     run_check "$VU" F3 "FAIL|PASS" 30
   elif [ -n "$CLONE" ]; then
-    note "no Vault app asks for storage or media access: F1 and F4 can only say SKIPPED"
-    run_check "$VU" F1 "NEEDS_YOU|SKIPPED" 30 --es vaultApp "$CLONE"
-    run_check "$VU" F4 "NEEDS_YOU|SKIPPED" 30 --es vaultApp "$CLONE"
+    note "no Vault app asks for storage or media access: F1 says SKIPPED; F4/F5 use $CLONE"
+    run_check "$VU" F1 SKIPPED 30 --es vaultApp "$CLONE"
     run_check "$VU" F3 "FAIL|PASS|SKIPPED" 30 --es vaultApp "$CLONE"
   fi
+  if [ -n "$FAPP$CLONE" ]; then
+    # The owner's app-ops (no shell): the test op tied to no permission, and the ops of permissions the app does not
+    # ask for, stay changed on stock Android; ops of permissions it asks for may go back (not counted).
+    run_check "$VU" F4 PASS 30
+    run_check "$VU" F5 "PASS|INFO" 30
+    run_check "$VU" F5 "PASS|INFO" 30 --es undo true
+  fi
+
+  section "4b. Phase 1: the Vault's apps, lock, VPN and icon (the owner, through the channel)"
+  if [ -n "$CLONE" ]; then
+    run_act 0 vault-apps OK 30 --es pkg "$CLONE"
+    run_act 0 vault-app OK 30 --es do freeze --es pkg "$CLONE"
+    expect_flag "$VU" "$CLONE" hidden true "freeze hides the app in the Vault"
+    run_act 0 vault-apps OK 30 --es pkg "$CLONE"
+    if printf '%s' "$LAST_ACT" | grep -q "frozen=true"; then pass "the Vault's list still shows it, frozen"; else fail "the Vault's list still shows it, frozen"; fi
+    run_act 0 vault-app OK 30 --es do unfreeze --es pkg "$CLONE"
+    expect_flag "$VU" "$CLONE" hidden false "unfreeze brings it back"
+    run_act 0 vault-app OK 30 --es do suspend --es pkg "$CLONE"
+    expect_flag "$VU" "$CLONE" suspended true "suspend greys it out"
+    run_act 0 vault-app OK 30 --es do unsuspend --es pkg "$CLONE"
+    expect_flag "$VU" "$CLONE" suspended false "unsuspend"
+  fi
+  run_act 0 vault-lock OK 30
+  run_act 0 vault-vpn OK 30
+  run_act 0 vault-state OK 30
+  if printf '%s' "$LAST_ACT" | grep -q "setupVersion=2"; then pass "the Vault's setup is version 2 (Vault actions)"; else fail "the Vault's setup is version 2 (Vault actions)"; fi
+  if [ "$(vault_icon_count)" = "0" ]; then pass "the Vault copy has no icon in the Work tab by default"; else fail "the Vault copy has no icon in the Work tab by default"; fi
+  run_act 0 vault-icon OK 30 --es on true
+  if wait_until 10 vault_icon_shown; then
+    pass "its icon can be shown"
+  else
+    fail "its icon can be shown"
+  fi
+  run_act 0 vault-icon OK 30 --es on false
+  # No shell in this part: a personal freeze waits for it, and the opposite action cancels it.
+  run_act 0 personal OK 30 --es do FREEZE --es pkg com.android.camera2
+  if printf '%s' "$LAST_ACT" | grep -q "waits for the shell"; then pass "with no shell, a personal freeze waits"; else fail "with no shell, a personal freeze waits"; fi
+  run_act 0 personal OK 30 --es do UNFREEZE --es pkg com.android.camera2
+  if printf '%s' "$LAST_ACT" | grep -q "waiting: 0"; then pass "unfreeze cancels the waiting freeze"; else fail "unfreeze cancels the waiting freeze"; fi
 
   section "5. The bridges (self-tests, no picker)"
   run_check "$VU" B0 PASS 30
@@ -224,11 +340,9 @@ if [ "$PART" = "vault" ]; then
   run_check "$VU" B1 PASS 30
   run_check "$VU" B1 PASS 30 --es undo true
 
-  section "6. Pause and resume"
-  run_check 0 Q1 PASS 40
-  run_check 0 Q2 PASS 60
-
-  section "7. Reboot"
+  # The reboot comes before pause and resume (0.1.1): run 13 rebooted a second after a resume, and after that boot
+  # Android showed "Blocked by work policy" for the Vault copy (its apps had stayed suspended by the platform).
+  section "6. Reboot"
   adb reboot
   adb wait-for-device
   started=$SECONDS
@@ -243,10 +357,18 @@ if [ "$PART" = "vault" ]; then
   LOGCAT_PID=$!
   adb logcat -d -v time -s "LiquidVault:I" | grep "recorded the boot" | tail -4
   run_check 0 R1 PASS 40
+  until_unlocked "$VU" 120 || note "user $VU is not running unlocked yet: $(adb shell am get-started-user-state "$VU" 2>&1 | tr -d '\r')"
   run_check "$VU" R1 PASS 60
   run_check "$VU" R2 PASS 30
-  run_check 0 R3 PASS 40
+  run_check 0 R3 "PASS|SKIPPED" 40
   run_check 0 R4 PASS 20
+
+  section "7. Pause and resume"
+  run_check 0 Q1 PASS 40
+  run_check 0 Q2 PASS 60
+  # After a resume the Vault's apps must open again (the Vault copy answers a check started in the Vault).
+  until_unlocked "$VU" 90 || note "user $VU is not running unlocked yet after the resume"
+  run_check "$VU" L1 PASS 60
 
   section "8. Destroy the Vault"
   run_check 0 D1 FAIL 20 --es confirm WRONG
@@ -304,7 +426,9 @@ if [ "$PART" = "shell" ]; then
     run_check "$VU" L0 PASS 60 --es connect forwarded
   fi
   run_check 0 L0 PASS 40
-  run_check "$VU" S1 "PASS|FAIL" 20
+  run_check "$VU" S1 "PASS|INFO" 20
+  # Stock Android: the shell reaches a work profile made by the shell (no "no debugging features").
+  run_check 0 P2 PASS 60
 
   section "4. Clone and app-ops with the shell"
   CLONE=$(missing_in_vault)
@@ -322,10 +446,29 @@ if [ "$PART" = "shell" ]; then
   note "app to clone: ${CLONE:-none found}"
   if [ -n "$CLONE" ]; then
     run_check 0 C2 PASS 60 --es clone "$CLONE"
-    run_check 0 F6 NEEDS_YOU 90 --es vaultApp "$CLONE"
-    run_check 0 F6 PASS 20 --es answer 0
-    run_check 0 F7 NEEDS_YOU 90 --es vaultApp "$CLONE"
-    run_check 0 F7 "NEEDS_YOU|PASS" 90 --es undo true
+  fi
+
+  section "4b. Phase 1: personal apps and copying, with the shell"
+  # The shell may not `pm hide` (it lacks MANAGE_USERS, run 15): a personal app is frozen by turning it off.
+  run_act 0 personal OK 60 --es do FREEZE --es pkg com.android.camera2
+  expect_flag 0 com.android.camera2 enabled 3 "the shell freezes (turns off) a personal app"
+  run_act 0 personal-apps OK 30 --es pkg com.android.camera2
+  if printf '%s' "$LAST_ACT" | grep -q "frozen=true"; then pass "the Apps list shows it as frozen"; else fail "the Apps list shows it as frozen"; fi
+  run_act 0 personal OK 60 --es do UNFREEZE --es pkg com.android.camera2
+  expect_flag 0 com.android.camera2 enabled 1 "and unfreezes it"
+  run_act 0 personal-apps OK 30 --es pkg com.android.camera2
+  if printf '%s' "$LAST_ACT" | grep -q "frozen=false"; then pass "the Apps list shows it back"; else fail "the Apps list shows it back"; fi
+  run_act 0 personal OK 60 --es do SUSPEND --es pkg com.android.camera2
+  expect_flag 0 com.android.camera2 suspended true "the shell suspends a personal app"
+  run_act 0 personal OK 60 --es do UNSUSPEND --es pkg com.android.camera2
+  expect_flag 0 com.android.camera2 suspended false "and unsuspends it"
+  COPY=$(vault_launchables | head -1)
+  if [ -n "$COPY" ]; then
+    note "copying $COPY back into the Vault with the shell, after taking it out"
+    adb shell pm uninstall --user "$VU" "$COPY" | tr -d '\r' | tail -1
+    run_act 0 copy OK 60 --es pkg "$COPY"
+    if printf '%s' "$LAST_ACT" | grep -q "silently"; then pass "the copy went through the shell (silent)"; else fail "the copy went through the shell (silent)"; fi
+    expect_flag "$VU" "$COPY" installed true "the app is in the Vault again"
   fi
 
   section "5. Destroy the Vault"

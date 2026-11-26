@@ -14,6 +14,7 @@ import android.os.SystemClock
 import android.provider.DocumentsContract
 import dev.liquid.vault.Env
 import dev.liquid.vault.admin.OwnerAppOps
+import dev.liquid.vault.admin.ShellAccess
 import dev.liquid.vault.admin.VaultSetup
 import dev.liquid.vault.bridge.AccessLog
 import dev.liquid.vault.bridge.BridgeAllowlist
@@ -61,16 +62,18 @@ object Runner {
     private const val MODIFY_QUIET_MODE = "android.permission.MODIFY_QUIET_MODE"
 
     private val sees = listOf(
-        Answer("It sees nothing now", CheckStatus.PASS, "you checked: the app could not see your files"),
-        Answer("It still sees my files", CheckStatus.FAIL, "you checked: the app still saw your files"),
+        Answer("No photos now", CheckStatus.PASS, "you checked: the app showed none of your photos"),
+        Answer("It still shows them", CheckStatus.FAIL, "you checked: the app still showed your photos"),
     )
     private val seesAgain = listOf(
-        Answer("It sees my files", CheckStatus.PASS, "you checked: the app could see your files again"),
-        Answer("It still sees nothing", CheckStatus.FAIL, "you checked: the app still could not see your files"),
+        Answer("It shows the photo", CheckStatus.PASS, "you checked: the app showed the test photo"),
+        Answer("Still no photos", CheckStatus.FAIL, "you checked: the app still showed no photos"),
     )
+
+    /** F1/F2 only: F4–F7 read their result back from Android (0.1.1), nothing for you to look at. */
     val answers: Map<String, List<Answer>> = mapOf(
-        "F1" to sees, "F4" to sees, "F6" to sees,
-        "F2" to seesAgain, "F5" to seesAgain, "F7" to seesAgain,
+        "F1" to sees,
+        "F2" to seesAgain,
         "B1" to listOf(
             Answer("Only “${TestFolder.NAME}”", CheckStatus.PASS, "you saw: the Work tab showed only our test folder"),
             Answer("Also the Vault's own folders", CheckStatus.PASS, "you saw: the Work tab ALSO showed the Vault's own folders (Internal storage, Images, Downloads…). Bridge A works but shows the whole Vault to any personal app you pick with."),
@@ -78,7 +81,7 @@ object Runner {
     )
 
     /** Checks that change nothing and need no screen: what "Run safe checks" runs. */
-    val safe = listOf("A1", "A2", "S1", "S3", "V0", "V3", "L0", "L1", "Q0", "B3", "R1", "R2", "R3", "R4")
+    val safe = listOf("A1", "A2", "S1", "S3", "V0", "V3", "P2", "L0", "L1", "Q0", "B3", "R1", "R2", "R3", "R4")
 
     private fun now() = System.currentTimeMillis()
     private fun r(id: String, status: CheckStatus, summary: String, evidence: List<String> = emptyList(), question: String? = null) =
@@ -130,6 +133,8 @@ object Runner {
         "V2-undo" -> v2Undo(extras)
         "V3" -> v3()
         "P1" -> p1()
+        "P2" -> if (Env.isVaultSide) p2Vault(lift = extras["lift"] == "true") else p2Personal(extras["vault"])
+        "P2-undo" -> sideOnly("P2-undo", vault = true) ?: p2Block()
         "C1" -> c1()
         "C2" -> c2()
         "C3" -> c3(host)
@@ -138,12 +143,9 @@ object Runner {
         "F2" -> fPolicy("F2", DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED)
         "F2-undo" -> fPolicy("F2-undo", DevicePolicyManager.PERMISSION_GRANT_STATE_DEFAULT)
         "F3" -> f3()
-        "F4" -> fOwnerOps("F4", AppOpsManager.MODE_ERRORED)
-        "F5" -> fOwnerOps("F5", AppOpsManager.MODE_ALLOWED)
-        "F5-undo" -> fOwnerOps("F5-undo", AppOpsManager.MODE_DEFAULT)
-        "F6" -> fShellOps("F6", "deny")
-        "F7" -> fShellOps("F7", "allow")
-        "F7-undo" -> fShellOps("F7-undo", "default")
+        "F4" -> fAppOps("F4", deny = true)
+        "F5" -> fAppOps("F5", deny = false)
+        "F5-undo" -> fAppOpsUndo("F5-undo")
         "F8" -> f8(AppOpsManager.MODE_ALLOWED)
         "F8-undo" -> f8(AppOpsManager.MODE_DEFAULT)
         "L0" -> l0(host, extras)
@@ -214,6 +216,20 @@ object Runner {
 
     private fun s1(): CheckResult {
         val st = Shell.state.value
+        if (!Shell.alive && Env.isVaultSide) {
+            // Phone test 0.1.0: S1 said FAIL here. The Vault copy does not need the shell, and Shevery cannot reach it
+            // while the Vault blocks the shell: Shizuku-type servers hand their connection to apps in other profiles
+            // through the same shell check as C2 (AOSP ContentProviderHelper.getContentProviderExternal).
+            val access = ShellAccess.read()
+            return r(
+                "S1", CheckStatus.INFO, "not needed here: the personal copy runs the shell's commands for the Vault (through the channel)",
+                listOf(
+                    "the Vault blocks the shell (\"no debugging features\", P2): ${if (access.blocked) "yes, so Shevery cannot reach this copy at all" else "no"}",
+                    "this app offers two doors: ${Env.app.packageName}.shevery (Shevery's own API) and ${Env.app.packageName}.shizuku (official Shizuku API)",
+                    "last door used in this run of the app: ${st.door?.label ?: "none"}",
+                ),
+            )
+        }
         if (!Shell.alive) {
             return r(
                 "S1", CheckStatus.FAIL, "Shevery has not connected to this copy",
@@ -236,7 +252,7 @@ object Runner {
     }
 
     private fun s2(): CheckResult {
-        if (!Shell.alive) return r("S2", CheckStatus.SKIPPED, "needs shell: Shevery is not running")
+        if (!Shell.alive) return r("S2", CheckStatus.SKIPPED, Shell.unavailableReason() ?: "needs shell")
         if (Shell.permitted()) return r("S2", CheckStatus.PASS, "Shevery allows Liquid Vault")
         val rationale = runCatching { rikka.shizuku.Shizuku.shouldShowRequestPermissionRationale() }.getOrDefault(false)
         if (rationale) {
@@ -411,6 +427,84 @@ object Runner {
         return r("P1", if (ok) CheckStatus.PASS else CheckStatus.FAIL, if (ok) "\"block screenshots\" went on and off as asked" else "the policy did not change as asked", listOf("before: $before", "after turning on: $on", "after turning off: $off"))
     }
 
+    /** P2 in the Vault copy: "no debugging features" as the owner sees it; [lift] clears it as the owner first. */
+    private fun p2Vault(lift: Boolean): CheckResult {
+        val lines = mutableListOf<String>()
+        if (lift) {
+            val before = ShellAccess.read()
+            lines += "before: in force ${before.blocked}, Liquid Vault's own policy ${before.ownPolicy}"
+            lines += ShellAccess.lift()
+        }
+        val now = ShellAccess.read()
+        lines += ShellAccess.lines(now)
+        val whose = when (now.ownPolicy) {
+            true -> "it is Liquid Vault's own policy as the owner (Android's setup set it in its name), so \"Let the shell in\" can lift it"
+            false -> "it is not Liquid Vault's policy: it was put on the profile itself (by Android or MagicOS), and the owner may not be able to lift it; \"Let the shell in\" tries"
+            null -> "Android did not say who set it; \"Let the shell in\" tries"
+        }
+        return when {
+            !now.blocked && lift -> r("P2", CheckStatus.PASS, "lifted: the shell may reach the Vault now. In the personal copy run P2, then C2 and F6 again", lines)
+            !now.blocked -> r("P2", CheckStatus.PASS, "the shell may reach the Vault (\"no debugging features\" is off)", lines)
+            lift -> r("P2", CheckStatus.FAIL, "still on after clearing it: it is not this app's policy, so the owner cannot lift it (it is on the profile itself)", lines)
+            else -> r("P2", CheckStatus.FAIL, "the Vault blocks the shell (\"no debugging features\" is on): $whose", lines)
+        }
+    }
+
+    /** P2's Undo in the Vault copy: the owner puts "no debugging features" back on. */
+    private fun p2Block(): CheckResult {
+        val lines = ShellAccess.block().toMutableList()
+        val now = ShellAccess.read()
+        lines += ShellAccess.lines(now)
+        return r("P2-undo", if (now.blocked) CheckStatus.PASS else CheckStatus.FAIL, if (now.blocked) "the Vault blocks the shell again" else "\"no debugging features\" did not come back on", lines)
+    }
+
+    /**
+     * P2 in the personal copy: whether the shell reaches the Vault (a harmless `pm list packages --user <Vault>`), and
+     * where "no debugging features" comes from (`dumpsys user`, which the shell may read even while it is blocked).
+     * [vaultAction] "lift" / "block" first asks the Vault copy to change it, through the channel (the emulator test uses
+     * it: once the shell is blocked, adb can no longer start the Vault copy).
+     */
+    private suspend fun p2Personal(vaultAction: String?): CheckResult {
+        val lines = mutableListOf<String>()
+        val vault = Env.vaultUser() ?: return r("P2", CheckStatus.SKIPPED, "there is no Vault yet")
+        if (vaultAction == "lift" || vaultAction == "block") {
+            if (!Channel.ready()) return r("P2", CheckStatus.SKIPPED, "the channel to the Vault copy is not set up (L0)")
+            val answer = runCatching { Channel.call("shellAccess", vaultAction) }
+            lines += "asked the Vault copy to ${if (vaultAction == "lift") "let the shell in" else "block the shell"}: " +
+                (answer.exceptionOrNull()?.asEvidence() ?: answer.getOrNull()?.getString("summary") ?: "no answer")
+            answer.getOrNull()?.getStringArrayList("lines")?.forEach { lines += "  $it" }
+        }
+        Shell.unavailableReason()?.let { return r("P2", CheckStatus.SKIPPED, it, lines) }
+        val probe = Shell.run(ShellCommands.listPackages(vault.id, Env.app.packageName))
+        lines += probe.evidence()
+        val reaches = probe.ok && probe.output.contains("package:${Env.app.packageName}")
+        val blocked = ShellCommands.shellBlockedFromUser(probe.output)
+        val dump = Shell.run(ShellCommands.dumpsysUser())
+        val parsed = ShellCommands.parseUserRestrictions(dump.stdout, vault.id)
+        var from = ""
+        if (parsed == null) {
+            lines += "$ dumpsys user: user ${vault.id} not found in its output (exit ${dump.exitCode}, ${dump.stdout.length} characters)"
+        } else {
+            val source = ShellCommands.sourceOf(parsed, ShellCommands.NO_DEBUGGING_FEATURES)
+            lines += "$ dumpsys user: the Vault (user ${vault.id})"
+            lines += "  the profile's own restrictions: ${parsed.base.joinToString().ifEmpty { "none" }}"
+            lines += "  device policy restrictions: ${parsed.devicePolicy.joinToString().ifEmpty { "none" }}"
+            lines += "  in force: ${parsed.effective.joinToString().ifEmpty { "none (or not printed)" }}"
+            from = when (source) {
+                ShellCommands.RestrictionSource.PROFILE_ITSELF -> "it is on the profile itself (Android or MagicOS), not device policy: the owner probably cannot lift it"
+                ShellCommands.RestrictionSource.DEVICE_POLICY -> "it is device policy (Liquid Vault's, as the owner): the owner can lift it"
+                ShellCommands.RestrictionSource.BOTH -> "it is both on the profile itself and device policy: lifting the policy will not be enough"
+                ShellCommands.RestrictionSource.NOT_SET -> "it is not listed"
+            }
+            lines += "  \"no debugging features\": $from"
+        }
+        return when {
+            reaches -> r("P2", CheckStatus.PASS, "the shell reaches the Vault (user ${vault.id})", lines)
+            blocked -> r("P2", CheckStatus.FAIL, "the Vault blocks the shell (\"no debugging features\"${if (from.isNotEmpty()) "; $from" else ""}): open P2 in the Vault copy and tap \"Let the shell in\"", lines)
+            else -> r("P2", CheckStatus.FAIL, "the shell could not list the Vault's apps", lines)
+        }
+    }
+
     // ---------------------------------------------------------------- C: clone
 
     private fun cloneTarget(): String? = Prefs.app.getString(Prefs.CLONE_TARGET, null)
@@ -430,7 +524,12 @@ object Runner {
         val vault = Env.vaultUser() ?: return r("C2", CheckStatus.SKIPPED, "there is no Vault yet")
         val res = Shell.run(ShellCommands.installExisting(vault.id, pkg))
         val there = runCatching { Env.app.getSystemService(LauncherApps::class.java).getApplicationInfo(pkg, 0, vault); true }.getOrDefault(false)
-        return r("C2", if (there) CheckStatus.PASS else CheckStatus.FAIL, if (there) "$pkg is in the Vault (shell install-existing)" else "$pkg is not in the Vault after the command", listOf(res.evidence(), "in the Vault now (LauncherApps): $there"))
+        val summary = when {
+            there -> "$pkg is in the Vault (shell install-existing)"
+            ShellCommands.shellBlockedFromUser(res.output) -> "the Vault blocks the shell (\"no debugging features\"): lift it with P2 in the Vault copy, then run C2 again"
+            else -> "$pkg is not in the Vault after the command"
+        }
+        return r("C2", if (there) CheckStatus.PASS else CheckStatus.FAIL, summary, listOf(res.evidence(), "in the Vault now (LauncherApps): $there"))
     }
 
     private suspend fun c3(host: Host?): CheckResult {
@@ -471,6 +570,10 @@ object Runner {
         Env.app.packageManager.getPackageInfo(pkg, PackageManager.GET_PERMISSIONS or PackageManager.MATCH_UNINSTALLED_PACKAGES).requestedPermissions?.toList()
     }.getOrNull() ?: emptyList()
 
+    private fun targetSdk(pkg: String): Int? = runCatching {
+        Env.app.packageManager.getApplicationInfo(pkg, PackageManager.MATCH_UNINSTALLED_PACKAGES).targetSdkVersion
+    }.getOrNull()
+
     private fun label(pkg: String): String = runCatching {
         val pm = Env.app.packageManager
         pm.getApplicationLabel(pm.getApplicationInfo(pkg, PackageManager.MATCH_UNINSTALLED_PACKAGES)).toString()
@@ -485,9 +588,20 @@ object Runner {
     private fun fPolicy(id: String, state: Int): CheckResult {
         sideOnly(id, vault = true)?.let { return it }
         val pkg = vaultApp() ?: return r(id, CheckStatus.SKIPPED, "choose a Vault app first (in this copy)")
-        val perms = requested(pkg).filter { it in storagePermissions }
+        val req = requested(pkg)
+        val perms = req.filter { it in storagePermissions }
         if (perms.isEmpty()) return r(id, CheckStatus.SKIPPED, "${label(pkg)} asks for no storage or media permission: choose another app")
-        val lines = mutableListOf<String>()
+        val target = targetSdk(pkg)
+        val lines = mutableListOf(
+            "${label(pkg)} is built for Android API ${target ?: "?"} and asks for: ${perms.joinToString { it.substringAfterLast('.') }}",
+            "the test photo is in Pictures/${TestFolder.NAME} (the button above puts one there)",
+        )
+        // Phone test 0.1.0: Chrome cannot show the policy (D29). Undo (DEFAULT) runs for any app.
+        if (state != DevicePolicyManager.PERMISSION_GRANT_STATE_DEFAULT && target != null) {
+            StorageOps.policyTestUnsuitable(target, req)?.let { why ->
+                return r(id, CheckStatus.SKIPPED, "${label(pkg)} cannot show this: $why. Choose a gallery that asks for photos and videos (for example Aves; clone it with C3)", lines)
+            }
+        }
         var anySet = false
         for (p in perms) {
             val set = runCatching { Env.dpm.setPermissionGrantState(Env.admin, pkg, p, state) }
@@ -499,10 +613,10 @@ object Runner {
         val app = label(pkg)
         return when (state) {
             DevicePolicyManager.PERMISSION_GRANT_STATE_DENIED ->
-                if (anySet) r(id, CheckStatus.NEEDS_YOU, "denied by policy; now check $app", lines, "Open $app in the Vault. Does it still see your photos or files?")
+                if (anySet) r(id, CheckStatus.NEEDS_YOU, "denied by policy; now check $app", lines, "Open $app in the Vault. Does it still show your photos (the Liquid Vault test photo)?")
                 else r(id, CheckStatus.FAIL, "Android refused the policy for $app", lines)
             DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED ->
-                if (anySet) r(id, CheckStatus.NEEDS_YOU, "granted by policy; now check $app", lines, "Open $app in the Vault. Does it see your photos or files now?")
+                if (anySet) r(id, CheckStatus.NEEDS_YOU, "granted by policy; now check $app", lines, "Open $app in the Vault. Does it show the Liquid Vault test photo now?")
                 else r(id, CheckStatus.FAIL, "Android refused the policy for $app", lines)
             else -> r(id, CheckStatus.PASS, "$app's storage permissions are back in your hands", lines)
         }
@@ -523,86 +637,107 @@ object Runner {
         return r("F3", if (ok) CheckStatus.PASS else CheckStatus.FAIL, if (ok) "unexpected: the policy gave All files" else "the policy cannot give All files (as expected: it is an app-op)", lines)
     }
 
-    private fun opsFor(pkg: String): List<String> {
-        val req = requested(pkg)
-        val ops = req.filter { it in storagePermissions }.mapNotNull { AppOpsManager.permissionToOp(it) }.toMutableList()
-        if (Manifest.permission.MANAGE_EXTERNAL_STORAGE in req) ops += OwnerAppOps.OP_ALL_FILES
-        return ops.distinct()
+    // F4–F7: app-ops for a Vault app, by the owner (no shell) or through the shell (D28). Each op is read right after
+    // the change and once more 1 s later: Android puts back the ops of permissions the app asks for, so those are shown
+    // but never counted; a test op tied to no permission (StorageOps.CONTROL) shows whether a change reaches the app.
+
+    /** Reads and changes one Vault app's app-ops, as the owner (Vault copy) or through the shell (personal copy). */
+    private interface OpsAccess {
+        val who: String
+        /** The mode Android applies, and a note for the row (the uid mode the shell printed, an error). */
+        suspend fun read(op: String): Pair<String?, String>
+        /** Null when it worked, else what went wrong. */
+        suspend fun write(op: String, mode: String): String?
     }
 
-    private fun fOwnerOps(id: String, mode: Int): CheckResult {
+    private class OwnerOps(private val uid: Int, private val pkg: String) : OpsAccess {
+        override val who = "the owner"
+        override suspend fun read(op: String): Pair<String?, String> =
+            runCatching { OwnerAppOps.modeName(OwnerAppOps.mode(StorageOps.opString(op), uid, pkg)) }
+                .fold({ it to "" }, { null to "read failed: ${it.asEvidence()}" })
+        override suspend fun write(op: String, mode: String): String? =
+            runCatching { OwnerAppOps.setMode(StorageOps.opString(op), uid, pkg, OwnerAppOps.modeOf(mode)) }.exceptionOrNull()?.asEvidence()
+    }
+
+    /** The way to change [pkg]'s app-ops for this check, or the result that says why it cannot run. */
+    private fun opsAccess(id: String, pkg: String): Pair<OpsAccess?, CheckResult?> {
+        val uid = runCatching { Env.app.packageManager.getPackageUid(pkg, 0) }.getOrNull()
+            ?: return null to r(id, CheckStatus.SKIPPED, "${label(pkg)} is not installed in the Vault")
+        return OwnerOps(uid, pkg) to null
+    }
+
+    /** Whether [pkg] holds the permission behind [op] in the Vault; null when this copy cannot tell (personal side). */
+    private fun granted(pkg: String, op: String): Boolean? {
+        val perm = StorageOps.permissionOf(op) ?: return null
+        if (!Env.isVaultSide) return null
+        return Env.app.packageManager.checkPermission(perm, pkg) == PackageManager.PERMISSION_GRANTED
+    }
+
+    private suspend fun fAppOps(id: String, deny: Boolean): CheckResult {
         sideOnly(id, vault = true)?.let { return it }
         val pkg = vaultApp() ?: return r(id, CheckStatus.SKIPPED, "choose a Vault app first (in this copy)")
-        val ops = opsFor(pkg)
-        if (ops.isEmpty()) return r(id, CheckStatus.SKIPPED, "${label(pkg)} asks for no storage, media or All files access: choose another app")
-        val uid = Env.app.packageManager.getPackageUid(pkg, 0)
-        val lines = mutableListOf("uid of ${label(pkg)} in the Vault: $uid")
-        var anyOk = false
-        var firstError: String? = null
-        val undo = mode == AppOpsManager.MODE_DEFAULT
-        for (op in ops) {
-            val before = OwnerAppOps.mode(op, uid, pkg)
-            // Undo: Android's own default for the op, which removes the app's entry (StorageOps). The owner can read only
-            // the effective mode, not the app's own entry, so this is the closest to "as before" it can do.
-            val target = if (undo) OwnerAppOps.defaultMode(op) else mode
-            val set = runCatching { OwnerAppOps.setMode(op, uid, pkg, target) }
-            val after = OwnerAppOps.mode(op, uid, pkg)
-            if (set.isSuccess && (after == target || undo)) anyOk = true
-            set.exceptionOrNull()?.let { if (firstError == null) firstError = it.asEvidence() }
-            lines += "$op: ${OwnerAppOps.modeName(before)} → ${OwnerAppOps.modeName(after)}${set.exceptionOrNull()?.let { " (error: ${it.asEvidence()})" } ?: ""}"
-        }
+        val (access, refused) = opsAccess(id, pkg)
+        refused?.let { return it }
+        access!!
         val app = label(pkg)
-        if (!anyOk) return r(id, CheckStatus.FAIL, "the profile owner could not change app-ops here: ${firstError ?: "the modes did not change"}", lines)
-        return when (mode) {
-            AppOpsManager.MODE_ERRORED -> r(id, CheckStatus.NEEDS_YOU, "app-ops denied by the owner; now check $app", lines, "Open $app in the Vault. Does it still see your photos or files?")
-            AppOpsManager.MODE_ALLOWED -> r(id, CheckStatus.NEEDS_YOU, "app-ops allowed by the owner; now check $app", lines, "Open $app in the Vault. Does it see your photos or files now?")
-            else -> r(id, CheckStatus.PASS, "$app's app-ops are back to Android's defaults", lines)
+        val req = requested(pkg)
+        val target = if (deny) "deny" else "allow"
+        val ops = StorageOps.shellNames + if (deny) listOf(StorageOps.CONTROL) else emptyList()
+        val key = Prefs.OWNER_OPS_BEFORE + pkg
+        val saved = StorageOps.decode(Prefs.app.getString(key, null))
+        val before = mutableMapOf<String, String?>()
+        val now = mutableMapOf<String, String?>()
+        val notes = mutableMapOf<String, MutableList<String>>()
+        for (op in ops) {
+            before[op] = access.read(op).first
+            access.write(op, target)?.let { notes.getOrPut(op) { mutableListOf() } += it }
+            val (mode, note) = access.read(op)
+            now[op] = mode
+            if (note.isNotEmpty()) notes.getOrPut(op) { mutableListOf() } += "right after: $note"
         }
+        // What the app had before the first change, for Undo (D24). The test op is put back below, not by Undo.
+        if (saved == null) {
+            Prefs.app.edit().putString(key, StorageOps.encode(StorageOps.shellNames.associateWith { before[it] ?: StorageOps.NONE })).commit()
+        }
+        delay(1_000)
+        val readings = ops.map { op ->
+            val (later, note) = access.read(op)
+            if (note.isNotEmpty()) notes.getOrPut(op) { mutableListOf() } += "after 1 s: $note"
+            StorageOps.Reading(op, StorageOps.kind(op, req), before[op], target, now[op], later, notes[op]?.distinct()?.joinToString("; ") ?: "")
+        }
+        val lines = readings.map { StorageOps.line(it, app, granted(pkg, it.op)) }.toMutableList()
+        if (deny) {
+            val back = before[StorageOps.CONTROL]?.takeIf { it != "default" } ?: StorageOps.defaultMode(StorageOps.CONTROL)
+            val error = access.write(StorageOps.CONTROL, back)
+            lines += "test op put back to $back: ${error ?: access.read(StorageOps.CONTROL).first}"
+        }
+        if (saved != null) lines += "(Undo will put back the modes from before the first change)"
+        val verdict = StorageOps.verdict(readings, access.who, app, deny)
+        return r(id, verdict.status, verdict.summary, lines)
     }
 
-    private val shellOps = StorageOps.shellNames
-
-    private suspend fun fShellOps(id: String, mode: String): CheckResult {
-        sideOnly(id, vault = false)?.let { return it }
+    /** F5's Undo: the modes from before F4/F5's first change, or Android's defaults when none were kept. */
+    private suspend fun fAppOpsUndo(id: String): CheckResult {
+        sideOnly(id, vault = true)?.let { return it }
         val pkg = vaultApp() ?: return r(id, CheckStatus.SKIPPED, "choose a Vault app first (in this copy)")
-        Shell.unavailableReason()?.let { return r(id, CheckStatus.SKIPPED, it) }
-        val vault = Env.vaultUser()?.id ?: return r(id, CheckStatus.SKIPPED, "there is no Vault yet")
-        val lines = mutableListOf<String>()
-        var matched = 0
-        val undo = mode == "default"
-        val key = Prefs.SHELL_OPS_BEFORE + pkg
+        val (access, refused) = opsAccess(id, pkg)
+        refused?.let { return it }
+        access!!
+        val key = Prefs.OWNER_OPS_BEFORE + pkg
         val saved = StorageOps.decode(Prefs.app.getString(key, null))
-        val before = mutableMapOf<String, String>()
-        for (op in shellOps) {
-            if (!undo && saved == null) {
-                val was = Shell.run(ShellCommands.appOpsGet(vault, pkg, op))
-                before[op] = ShellCommands.parseAppOpMode(was.output, op) ?: StorageOps.NONE
-            }
-            // Undo puts back the app's own entry from before F6/F7's first change, or no entry (Android's default for the
-            // op, which removes it). Writing "default" would leave an entry that may read as "not allowed" (run 10).
-            val target = if (undo) saved?.get(op)?.takeIf { it != StorageOps.NONE } ?: StorageOps.defaultMode(op) else mode
-            val set = Shell.run(ShellCommands.appOpsSet(vault, pkg, op, target))
-            val get = Shell.run(ShellCommands.appOpsGet(vault, pkg, op))
-            val now = ShellCommands.parseAppOpMode(get.output, op)
-            // No entry means the op is in Android's default mode for it (setting an op to its default removes the entry).
-            val default = if (now == null) ShellCommands.parseAppOpDefault(get.output) else null
-            if (set.ok && (now == target || (now == null && default == target))) matched++
-            val read = now ?: default?.let { "no entry: Android's default for it, $it" }
-                ?: "no entry (${get.output.lines().map { it.trim() }.filter { it.isNotEmpty() }.joinToString(" · ").take(100)})"
-            lines += "$op: set exit ${set.exitCode}${if (set.output.isNotBlank()) " (${set.output.take(120)})" else ""} → $read"
+        val lines = mutableListOf<String>()
+        var back = 0
+        for (op in StorageOps.shellNames) {
+            // Android's default for the op removes the app's entry; "default" written for a storage op would leave one.
+            val target = saved?.get(op)?.takeIf { it != StorageOps.NONE } ?: StorageOps.defaultMode(op)
+            val error = access.write(op, target)
+            val (mode, note) = access.read(op)
+            if (error == null && mode == target) back++
+            lines += "${StorageOps.shellName(op)}: put back $target → reads $mode${if (note.isNotEmpty()) " ($note)" else ""}${error?.let { " (error: $it)" } ?: ""}"
         }
-        if (!undo && saved == null) Prefs.app.edit().putString(key, StorageOps.encode(before)).commit()
-        if (undo) {
-            lines += if (saved != null) "put back the entries from before F6/F7" else "nothing was saved from before F6/F7: used Android's defaults"
-            Prefs.app.edit().remove(key).apply()
-        }
-        val app = label(pkg)
-        if (matched == 0) return r(id, CheckStatus.FAIL, "the shell could not set the app-ops", lines)
-        return when (mode) {
-            "deny" -> r(id, CheckStatus.NEEDS_YOU, "app-ops denied by the shell ($matched of ${shellOps.size}); now check $app", lines, "Open $app in the Vault. Does it still see your photos or files?")
-            "allow" -> r(id, CheckStatus.NEEDS_YOU, "app-ops allowed by the shell ($matched of ${shellOps.size}); now check $app", lines, "Open $app in the Vault. Does it see your photos or files now?")
-            else -> r(id, CheckStatus.PASS, "$app's app-ops are back as they were ($matched of ${shellOps.size} read back)", lines)
-        }
+        lines += if (saved != null) "put back the modes from before the first change" else "nothing was kept from before: used Android's defaults"
+        Prefs.app.edit().remove(key).apply()
+        return r(id, CheckStatus.PASS, "${label(pkg)}'s app-ops are back as they were ($back of ${StorageOps.shellNames.size} read back as set)", lines)
     }
 
     private fun f8(mode: Int): CheckResult {
@@ -794,10 +929,27 @@ object Runner {
         val remote = if (Channel.ready()) runCatching {
             Channel.call("run", "access-log")?.getString("json")?.lines()?.filter { it.isNotBlank() }?.mapNotNull { runCatching { VaultJson.decodeFromString(AccessEntry.serializer(), it) }.getOrNull() }
         }.getOrNull() ?: emptyList() else emptyList()
-        val refused = (mine + remote).filter { !it.allowed && it.callerPackage != own && it.callerPackage !in pickers }.sortedBy { it.atMillis }
-        val lines = dev.liquid.vault.core.common.Report.accessLines(refused.takeLast(8))
-        return if (refused.isNotEmpty()) r("B3", CheckStatus.PASS, "${refused.size} refused access(es) by ${refused.map { it.callerPackage }.distinct().joinToString()}", lines)
-        else r("B3", CheckStatus.NOT_RUN, "no app has been refused yet: pick the test folder from another app's folder picker", listOf("access log entries on this side: ${mine.size}; from the other side: ${remote.size}"))
+        val all = (mine + remote).sortedBy { it.atMillis }
+        val others = all.filter { it.callerPackage != own && it.callerPackage !in pickers }
+        val refused = others.filter { !it.allowed }
+        val allowedOthers = others.filter { it.allowed }
+        val lines = mutableListOf(
+            "how the rule works: the system picker may browse (it works for whichever app opened it, and Android does not " +
+                "tell a folder provider which app that is); an app is checked by its own package name when it opens what " +
+                "it picked, with or without a lasting grant. That is where an app that is not allowed is refused.",
+            "access log entries on this side: ${mine.size}; from the other side: ${remote.size}",
+        )
+        fun story(pkg: String?, entries: List<dev.liquid.vault.core.common.AccessEntry>, verdict: String) {
+            val first = entries.first()
+            val pickerBefore = all.any { it.callerPackage in pickers && it.atMillis in (first.atMillis - 300_000)..first.atMillis }
+            lines += "$pkg: $verdict ${entries.size} time(s) (${entries.map { it.action.substringBefore(' ') }.distinct().joinToString()}) through bridge ${entries.map { it.via }.distinct().joinToString()}; " +
+                "the picker browsed in the 5 minutes before: ${if (pickerBefore) "yes" else "no"}"
+        }
+        refused.groupBy { it.callerPackage }.forEach { (pkg, entries) -> story(pkg, entries, "refused") }
+        allowedOthers.groupBy { it.callerPackage }.forEach { (pkg, entries) -> story(pkg, entries, "allowed (on the allowed list)") }
+        lines += dev.liquid.vault.core.common.Report.accessLines((refused.takeLast(8) + allowedOthers.takeLast(4)).sortedBy { it.atMillis })
+        return if (refused.isNotEmpty()) r("B3", CheckStatus.PASS, "${refused.map { it.callerPackage }.distinct().joinToString()} refused when it opened what it picked (${refused.size} time(s))", lines)
+        else r("B3", CheckStatus.NOT_RUN, "no app has been refused yet: in another app (for example Gmail › Attach file), pick hello.txt through the picker's \"Liquid Vault\" place or its Work tab", lines)
     }
 
     /** The access log as JSON lines, for the other copy's B3 (channel call "run" with "access-log"). */
@@ -845,7 +997,7 @@ object Runner {
         val rec = bootRecord() ?: return r("R1", CheckStatus.SKIPPED, "no reboot recorded yet: restart the phone, unlock it, then run R1", listOf("if it still says this after a reboot, MagicOS stopped Liquid Vault from starting at boot: Settings › Apps › App launch › Liquid Vault › Manage manually › Auto-launch on"))
         val same = rec.sameBootAs(currentBootWall())
         val lines = listOf(
-            "recorded at ${java.util.Date(rec.recordedAtMillis)} for the boot at ${java.util.Date(rec.bootWallMillis)}",
+            "recorded at ${java.util.Date(rec.recordedAtMillis)} for the boot at ${java.util.Date(rec.bootWallMillis)} (${(rec.recordedAtMillis - rec.bootWallMillis) / 1000} s after it; a Vault resume also starts the Vault copy again)",
             "this boot: ${java.util.Date(currentBootWall())}",
             "then: profile owner ${rec.profileOwner}, organisation \"${rec.organizationName}\", screenshots blocked ${rec.screenCaptureDisabled}, lasting permissions ${rec.channelGrants}, shell ${rec.shellAlive}, Vault paused ${rec.quietMode}",
         )
@@ -881,6 +1033,8 @@ object Runner {
             sub.forEach { lines += "  $it" }
         }
         val ok = channel && ping?.isSuccess == true && treesOk == trees
+        // Phone test 0.1.0: R3 said PASS before B1/B2 had made any folder grant (nothing to check). Say so instead.
+        if (ok && trees == 0 && !Env.isVaultSide) return r("R3", CheckStatus.SKIPPED, "the channel works; no folder grant to check yet: run B1 and B2, then R3 again", lines)
         return r("R3", if (ok) CheckStatus.PASS else CheckStatus.FAIL, if (ok) "channel and $treesOk folder grant(s) work" else "something no longer works", lines)
     }
 

@@ -67,7 +67,7 @@ object Cloner {
      * profile owner first lifts what would block it: the "unknown sources" restriction and this app's own "install apps"
      * app-op. Android may still ask you to confirm; the result arrives in [InstallResultReceiver].
      */
-    fun withInstallerSession(context: Context, pkg: String): List<String> {
+    fun withInstallerSession(context: Context, pkg: String, purpose: String = PURPOSE_C3): List<String> {
         val lines = mutableListOf<String>()
         val info = personalAppInfo(context, pkg)
         val files = listOf(info.sourceDir) + (info.splitSourceDirs?.toList() ?: emptyList())
@@ -105,7 +105,7 @@ object Cloner {
             val callback = PendingIntent.getBroadcast(
                 context,
                 id,
-                Intent(context, InstallResultReceiver::class.java).putExtra(EXTRA_PKG, pkg),
+                Intent(context, InstallResultReceiver::class.java).putExtra(EXTRA_PKG, pkg).putExtra(EXTRA_PURPOSE, purpose),
                 PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
             )
             session.commit(callback.intentSender)
@@ -115,7 +115,29 @@ object Cloner {
         return lines
     }
 
+    /**
+     * Removes an app from the Vault through Android's installer: Android asks you to confirm (the owner of a work profile
+     * cannot remove apps silently). The answer arrives in [InstallResultReceiver] with [purpose].
+     */
+    fun uninstallHere(context: Context, pkg: String, purpose: String) {
+        val callback = PendingIntent.getBroadcast(
+            context,
+            pkg.hashCode() xor 0x5ee1,
+            Intent(context, InstallResultReceiver::class.java).putExtra(EXTRA_PKG, pkg).putExtra(EXTRA_PURPOSE, purpose).putExtra("uninstall", true),
+            PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        context.packageManager.packageInstaller.uninstall(pkg, callback.intentSender)
+        DebugLog.event("Clone", "asked Android to remove $pkg from the Vault")
+    }
+
     const val EXTRA_PKG = "dev.liquid.vault.extra.PKG"
+    const val EXTRA_PURPOSE = "dev.liquid.vault.extra.PURPOSE"
+
+    /** Diagnostics' C3 (its row records the result). */
+    const val PURPOSE_C3 = "c3"
+
+    /** Phase 1's VaultActionActivity (it shows the result and closes). */
+    const val PURPOSE_ACTION = "action"
 }
 
 /** The Vault installer session's answer (C3): asks you to confirm when Android wants it, then records the result. */
@@ -126,6 +148,28 @@ class InstallResultReceiver : BroadcastReceiver() {
         val pkg = intent.getStringExtra(Cloner.EXTRA_PKG) ?: "?"
         val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, Int.MIN_VALUE)
         val message = intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE)
+        if (intent.getStringExtra(Cloner.EXTRA_PURPOSE) == Cloner.PURPOSE_ACTION) {
+            val removing = intent.getBooleanExtra("uninstall", false)
+            when (status) {
+                // Android wants you to confirm. VaultActionActivity is on screen, so this app may open Android's question.
+                PackageInstaller.STATUS_PENDING_USER_ACTION -> {
+                    dev.liquid.vault.vault.VaultActionState.asking()
+                    intent.getParcelableExtra(Intent.EXTRA_INTENT, Intent::class.java)?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        ?.let { runCatching { context.startActivity(it) }.onFailure { e -> dev.liquid.vault.vault.VaultActionState.done(false, "Android's question could not open: ${e.asEvidence()}") } }
+                }
+                PackageInstaller.STATUS_SUCCESS -> {
+                    val there = Cloner.installedHere(context, pkg)
+                    val ok = if (removing) !there else there
+                    DebugLog.event("Clone", "$pkg ${if (removing) "removed from" else "installed in"} the Vault: ${if (ok) "done" else "Android said success but it is ${if (there) "still" else "not"} there"}")
+                    dev.liquid.vault.vault.VaultActionState.done(ok, if (!ok) "Android said yes, but nothing changed" else if (removing) "removed from the Vault" else "in the Vault now")
+                }
+                else -> {
+                    DebugLog.error("Clone", "${if (removing) "removing" else "installing"} $pkg in the Vault: status $status, $message")
+                    dev.liquid.vault.vault.VaultActionState.done(false, if (status == PackageInstaller.STATUS_FAILURE_ABORTED) "cancelled" else "Android refused (${message ?: "status $status"})")
+                }
+            }
+            return
+        }
         if (intent.getBooleanExtra("uninstall", false)) {
             if (status == PackageInstaller.STATUS_PENDING_USER_ACTION) {
                 intent.getParcelableExtra(Intent.EXTRA_INTENT, Intent::class.java)?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)

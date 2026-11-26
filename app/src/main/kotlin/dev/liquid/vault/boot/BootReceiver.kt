@@ -13,7 +13,10 @@ class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         Env.init(context)
         when (intent.action) {
-            Intent.ACTION_BOOT_COMPLETED -> BootRecorder.record(context)
+            Intent.ACTION_BOOT_COMPLETED -> {
+                BootRecorder.record(context)
+                BootActions.run(context)
+            }
             Intent.ACTION_MY_PACKAGE_REPLACED -> {
                 DebugLog.event("App", "updated to ${Env.versionName()} (build ${Env.versionCode()})")
                 SideComponents.apply(context)

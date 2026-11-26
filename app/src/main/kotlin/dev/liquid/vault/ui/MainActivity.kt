@@ -22,10 +22,14 @@ import dev.liquid.vault.diag.Runner
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** The Diagnostics screen (Phase 0's whole app). The same activity runs in both copies; it shows its own side's checks. */
+/**
+ * The app's one activity, in both copies: the personal copy opens on Home (Phase 1), the Vault copy on its own small
+ * page; Diagnostics is a page of either. [EXTRA_SCREEN] opens a page directly (e.g. from the other copy).
+ */
 class MainActivity : ComponentActivity(), Host {
     override val activity get() = this
 
@@ -45,6 +49,9 @@ class MainActivity : ComponentActivity(), Host {
 
     /** Bumped when something outside the screen changes (a profile appears, the channel connects): the header re-reads. */
     val refresh = MutableStateFlow(0)
+
+    /** Pages asked for from outside the screen (an intent's [EXTRA_SCREEN]). */
+    private val navigate = kotlinx.coroutines.channels.Channel<String>(capacity = kotlinx.coroutines.channels.Channel.BUFFERED)
 
     private val profileEvents = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -69,7 +76,7 @@ class MainActivity : ComponentActivity(), Host {
         if (savedInstanceState == null) handle(intent)
         setContent {
             LauncherTheme {
-                DiagnosticsScreen(host = this, refresh = refresh, onClose = { finish() })
+                AppRoot(host = this, refresh = refresh, navigate = navigate.receiveAsFlow(), onFinish = { finish() })
             }
         }
     }
@@ -91,6 +98,7 @@ class MainActivity : ComponentActivity(), Host {
 
     /** Opened by the shell path (V2) or by Android's setup: finish the Vault's setup, then connect the channel once. */
     private fun handle(intent: Intent?) {
+        intent?.getStringExtra(EXTRA_SCREEN)?.let { navigate.trySend(it) }
         if (intent?.action != VaultSetup.ACTION_FINISH_SETUP || !Env.isVaultSide) return
         lifecycleScope.launch {
             withContext(Dispatchers.IO) { VaultSetup.runIfOwner(this@MainActivity, "the Vault copy was opened to finish setup") }
@@ -100,5 +108,10 @@ class MainActivity : ComponentActivity(), Host {
             }
             refresh.value++
         }
+    }
+
+    companion object {
+        /** A page to open: one of [Screen]'s keys ("diagnostics", "apps-vault", …). */
+        const val EXTRA_SCREEN = "dev.liquid.vault.extra.SCREEN"
     }
 }

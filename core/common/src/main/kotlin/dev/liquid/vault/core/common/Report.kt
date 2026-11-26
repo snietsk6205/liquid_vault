@@ -35,6 +35,8 @@ data class BootRecord(
     val channelGrants: Int = 0,
     val shellAlive: Boolean = false,
     val quietMode: Boolean? = null,
+    /** Vault side: whether "no debugging features" kept the shell out of the Vault at this boot (D37). */
+    val shellBlocked: Boolean? = null,
 ) {
     /** Two boot times within a minute of each other are the same boot (the clocks they come from drift a little). */
     fun sameBootAs(otherBootWallMillis: Long): Boolean = abs(bootWallMillis - otherBootWallMillis) < 60_000

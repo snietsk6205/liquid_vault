@@ -21,6 +21,15 @@
     <!-- Check F8 (and later the bridge): All files for this app's Vault copy, given by the profile owner. -->
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" tools:ignore="ScopedStorage" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Phase 1: removing an app from the Vault (Android asks you to confirm). -->
+    <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
+    <!-- Phase 1: the "start Shevery" reminder at boot (you allow it when you turn the option on). -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!--
+      Phase 1 option: turn wireless debugging on at boot. Only works once you grant it with adb (declared here because
+      MagicOS ignores a grant of an undeclared permission).
+    -->
+    <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" tools:ignore="ProtectedPermissions" />
 
     <!--
       Shevery's own client permission (requested, never defined here). The official Shizuku client library adds the
@@ -44,12 +53,20 @@
             android:name=".ui.MainActivity"
             android:exported="true"
             android:launchMode="singleTask"
-            android:windowSoftInputMode="adjustResize">
+            android:windowSoftInputMode="adjustResize" />
+        <!--
+          The launcher entry. An alias, so the Vault copy can hide its icon (Q4) while MainActivity stays startable; it is
+          switched per user by SideComponents.
+        -->
+        <activity-alias
+            android:name=".ui.LauncherAlias"
+            android:exported="true"
+            android:targetActivity=".ui.MainActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-        </activity>
+        </activity-alias>
 
         <!-- ===== Profile owner (Vault side) ===== -->
 
@@ -156,6 +173,23 @@
             android:theme="@style/Theme.LiquidVault.Invisible">
             <intent-filter>
                 <action android:name="dev.liquid.vault.action.CHANNEL_TO_VAULT" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <!--
+          Vault copy only (D43): screens the personal copy needs in the Vault (copy or remove an app with Android's
+          confirmation, the Vault's own lock). Reached through the owner's cross-profile filter, accepted only with a
+          one-time token from the channel.
+        -->
+        <activity
+            android:name=".vault.VaultActionActivity"
+            android:enabled="false"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:theme="@style/Theme.LiquidVault.Invisible">
+            <intent-filter>
+                <action android:name="dev.liquid.vault.action.VAULT_ACTION" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>

@@ -68,3 +68,59 @@ the Vault copy's icon in Phase 1.
 that commit carries the marker) or the workflow's "Publish a release" button, and give Med the release link. Then wait
 for Med's Phase 0 report (TESTING.md § Phase 0); record each result in `DECISIONS.md` (which mechanisms work on
 MagicOS) before starting Phase 1.
+
+## Session 2 — 2026-11-25 · Phase 0 report, release 0.1.1, then Phase 1
+
+**Asked**: "Here is my Phase 0 phone test report … go through it with me before you start Phase 1." For each
+FAIL/SKIPPED/NOT RUN: test bug, expected Android behaviour or a real MagicOS block, with evidence, recorded in
+DECISIONS; fix the test bugs and the C2/F6 cause "if it's what I think" in a small 0.1.1 with TESTING steps for only
+the changed checks; stop on a real MagicOS block; otherwise start Phase 1 and stop at its gate. Med's checks to verify:
+C2 = `DISALLOW_DEBUGGING_FEATURES` (check with `hasUserRestriction`, see whether clearing it fixes C2 and F6), F6 maybe
+the same cause, F1/F4 a flawed test, S1 in the Vault "not applicable", and how rules by calling package refuse an app
+when the picker is the caller.
+
+Notes on the report: Med's answers to F2/F5/F7 and the reasons for B3/D1 arrived as the template's placeholders, so they
+are treated as unanswered (none changes a conclusion: with Chrome, F2/F5/F7 would read "yes" whatever the policy). The
+second copy of the Vault report is cut off; the first copy is complete.
+
+| # | Point | State | What |
+|---|---|---|---|
+| 1 | Classify every result | Done | `DECISIONS.md` D25–D36, from the report, AOSP 15 sources (UserController, PermissionPolicyService, AppOpsService, ContentProviderHelper, UserRestrictionsUtils, UserTypeFactory, PackageInstallerSession) and Shizuku's server. |
+| 2 | Med's C2 theory | Confirmed, with one open part | C2's error is AOSP's shell check for a user with "no debugging features"; stock Android does not set it on a new work profile. Whether the owner can lift it on MagicOS: P2 (new). |
+| 3 | Med's F6 theory | Partly | F4 and F6's READ/WRITE/All files lines are Android keeping permission-backed app-ops in step (expected, also seen for the owner, who has no shell restriction); F6's READ_MEDIA lines are unexplained until 0.1.1's re-run (test op + P2). |
+| 4 | F1/F4 "test flawed" | Confirmed for F1/F2 (Chrome), corrected for the details | F1/F2 already set the media permissions an app asks for; Chrome asks for none. F4 is expected Android behaviour (D28). |
+| 5 | S1 in the Vault | Corrected | Not "Shevery serves only the personal side": the same shell check keeps Shevery out of the Vault (D27). Now INFO "not needed here". |
+| 6 | Bridge caller = documentsui | Explained | The picker browses; the app is checked when it opens what it picked (D31). B3 now tells each refused app's story; TESTING uses Gmail. |
+| 7 | CI | Fixed | Run 13 (main) failed: after a reboot right after a resume, the Vault copy was "Blocked by work policy". The test reboots first now (D35), and tests P2 end to end (D36). |
+| 8 | Release 0.1.1 | See below | |
+
+**Exact next step (0.1.1 part)**: Med runs `TESTING.md` § Phase 0 re-run and sends the report; if P2 says the owner
+cannot lift "no debugging features", that is recorded as MagicOS behaviour and Q5 closes as "the shell stays out".
+
+### Session 2, continued — 2026-11-26 · 0.1.1 report, then Phase 1 (release 0.2.0)
+
+**Asked** (after a usage-limit pause): "continue from where you left off"; Med sent the 0.1.1 reports and wrote: "i
+don't understand f6 and f7 in personal space, also storage for vault app, the instructions are ambiguous … using the
+vault apps seems hard; in the future phases do you plan on making it better?"
+
+| # | Point | State | What |
+|---|---|---|---|
+| 1 | 0.1.1 release | Done | Run 14: build, both emulator parts (P2 end to end: the owner blocks the shell, adb gets the phone's C2 error, the owner lets it back in) and the release passed. |
+| 2 | 0.1.1 phone results | Recorded | D37–D41: "no debugging features" gone by itself; silent clone works; F1/F2 PASS with Aves; F4/F5 really passed (verdict fixed); F6/F7 retired; clearer test steps. |
+| 3 | Med's questions | Answered | F6/F7 not needed; the storage section's results explained; Phase 1 replaces Diagnostics with real screens. |
+| 4 | Phase 1 | Built | Home, Apps, the Vault's lock, VPN, Settings, What's new; VaultService + VaultActionActivity; waiting-actions queue; boot reminders; Vault copy icon hidden (Q4). 41 JVM unit tests. |
+| 5 | Phase 1 emulator test | Passed (run 16) | Run 15: the Vault part passed; the shell part showed the shell may not `pm hide` (MANAGE_USERS). Personal Freeze now turns the app off (`pm disable-user`, D54); the frozen state is read from Android, so apps turned off in Settings show as Frozen too. Run 16: both parts passed (the shell turns Camera off and on, Android's record says so, the Apps list shows Frozen and back; the owner's freeze, suspend, lock, VPN and icon in the Vault; reboot, pause/resume, destroy). 43 JVM unit tests. A call to the Vault copy that its screen no longer waits for now ends quietly instead of logging "could not list the Vault's apps". |
+| 6 | Release 0.2.0 | Release commit | CI runs both emulator parts again and publishes only if they pass. |
+
+**Known limits**
+- Not tested on stock Android in CI: the installer-session copy and Android's uninstall question (they need taps on
+  Android's dialogs), the Vault's own lock (it needs a PIN typed into Android's screen), VPN with a real VPN app.
+  These are in TESTING § Phase 1.
+- A personal app Android protects, or one another system app turned off, cannot be frozen or unfrozen by the shell; the
+  shell's reason is shown.
+- B3 (an app refused by the bridge) is still not run on the phone; it belongs to Phase 2.
+
+**Questions for Med**: Q5 (let the shell into the Vault: moot while the phone does not set "no debugging features"),
+Q6 (what "hide" means).
+
+**Exact next step**: Med tests 0.2.0 (`TESTING.md` § Phase 1) and sends the report. Then Phase 2 (access rules).

@@ -82,6 +82,58 @@ object ShellCommands {
     fun listPackages(userId: Int, packageName: String): List<String> =
         listOf("pm", "list", "packages", "--user", user(userId), pkg(packageName))
 
+    /** Every user's facts, restrictions included (the shell may read it even when a profile blocks the shell). */
+    fun dumpsysUser(): List<String> = listOf("dumpsys", "user")
+
+    // Phase 1: what the shell does to apps (D45). `pm` prints "Package <pkg> new state: disabled-user" and
+    // "Package <pkg> new suspended state: true" (AOSP PackageManagerShellCommand). The shell cannot `pm hide`: Android
+    // asks for MANAGE_USERS there, which the shell does not hold (CI run 15), so a personal app is frozen by turning
+    // it off for the user instead, which the shell may do to whole apps (CHANGE_COMPONENT_ENABLED_STATE).
+
+    /** Freeze: the app is turned off for the user (gone from launchers, cannot run, its data kept). */
+    fun disableUser(userId: Int, packageName: String): List<String> =
+        listOf("pm", "disable-user", "--user", user(userId), pkg(packageName))
+
+    /** Unfreeze: the app is turned on again. */
+    fun enable(userId: Int, packageName: String): List<String> = listOf("pm", "enable", "--user", user(userId), pkg(packageName))
+
+    /** Suspend: the icon stays, greyed; the app cannot open. */
+    fun suspend(userId: Int, packageName: String): List<String> = listOf("pm", "suspend", "--user", user(userId), pkg(packageName))
+
+    fun unsuspend(userId: Int, packageName: String): List<String> = listOf("pm", "unsuspend", "--user", user(userId), pkg(packageName))
+
+    /** Removes an app (and its data) from one user only: the Vault's copy of an app. Only after a typed confirmation. */
+    fun uninstallForUser(userId: Int, packageName: String): List<String> {
+        require(userId > 0) { "apps are removed from the Vault only, never from the main user" }
+        return listOf("pm", "uninstall", "--user", user(userId), pkg(packageName))
+    }
+
+    /** The state `pm enable` / `pm disable-user` reports: "enabled", "default", "disabled-user", … */
+    fun parseEnabledState(output: String, packageName: String): String? =
+        Regex("Package ${Regex.escape(packageName)} new state: ([a-z-]+)").find(output)?.groupValues?.get(1)
+
+    fun parseSuspended(output: String, packageName: String): Boolean? =
+        Regex("Package ${Regex.escape(packageName)} new suspended state: (true|false)").find(output)?.groupValues?.get(1)?.toBooleanStrict()
+
+    fun uninstallSucceeded(output: String): Boolean = output.lineSequence().any { it.trim() == "Success" }
+
+    /**
+     * The part of a failed `pm` answer worth showing: its first line plus the exception's own message when there is
+     * one ("Exception occurred while executing 'hide': java.lang.SecurityException: Neither user 2000 nor current
+     * process has android.permission.MANAGE_USERS."), never the stack trace. Null when the shell said nothing.
+     */
+    fun errorSummary(output: String, max: Int = 240): String? {
+        val lines = output.lineSequence().map { it.trim() }.filter { it.isNotEmpty() && !it.startsWith("at ") }.toList()
+        if (lines.isEmpty()) return null
+        val reason = lines.firstOrNull { Regex("^[\\w.$]+(Exception|Error)(: |$)").containsMatchIn(it) }
+        val text = when {
+            reason == null -> lines.take(2).joinToString(" ")
+            reason == lines.first() -> reason
+            else -> lines.first() + " " + reason
+        }
+        return text.take(max)
+    }
+
     /** For the log: the command as it would be typed, quoting what needs it. */
     fun render(command: List<String>): String = command.joinToString(" ") { arg ->
         if (arg.isEmpty() || arg.any { it.isWhitespace() || it in "'\"$`\\;&|<>()*?![]{}" }) "'" + arg.replace("'", "'\\''") + "'" else arg
@@ -140,4 +192,92 @@ object ShellCommands {
 
     /** `id` prints "uid=2000(shell) gid=…": the uid number. */
     fun parseUid(output: String): Int? = Regex("uid=(\\d+)").find(output)?.groupValues?.get(1)?.toIntOrNull()
+
+    /**
+     * Android refuses every shell command that names a user with the restriction "no debugging features" with this
+     * sentence (AOSP 15 `UserController.handleIncomingUser`; phone test 0.1.0, check C2).
+     */
+    fun shellBlockedFromUser(output: String): Boolean = output.contains("Shell does not have permission to access user")
+
+    /** One op as `appops get --user N <pkg> <OP>` prints it: the uid's mode, the package's mode, or only a default. */
+    data class AppOpRead(val uidMode: String?, val packageMode: String?, val defaultMode: String?) {
+        /** The mode Android applies: a uid mode that is not the op's default wins, then the package's, then the default. */
+        fun effective(opDefault: String): String? = when {
+            uidMode != null && uidMode != opDefault -> uidMode
+            packageMode != null -> packageMode
+            defaultMode != null -> defaultMode
+            else -> uidMode
+        }
+    }
+
+    /** Reads `appops get` output: "Uid mode: OP: allow", "OP: deny; time=…", or "No operations." + "Default mode: …". */
+    fun parseAppOpRead(output: String, op: String): AppOpRead {
+        val lines = output.lineSequence().map { it.trim() }.toList()
+        fun mode(text: String) = text.substringBefore(';').trim().ifEmpty { null }
+        val uid = lines.firstOrNull { it.startsWith("Uid mode: $op:") }?.removePrefix("Uid mode: $op:")?.let(::mode)
+        val pkg = lines.firstOrNull { it.startsWith("$op:") }?.removePrefix("$op:")?.let(::mode)
+        return AppOpRead(uid, pkg, parseAppOpDefault(output))
+    }
+
+    /** A user's restrictions as `dumpsys user` prints them (AOSP 14/15: three lists under the user's block). */
+    data class UserRestrictions(
+        /** "Restrictions:": the profile's own (base) restrictions, set when it was made or by the system. */
+        val base: List<String>,
+        /** "Device policy restrictions:" (Android 14+) or its global/local halves (older): set by device policy. */
+        val devicePolicy: List<String>,
+        /** "Effective restrictions:": what is in force. Empty when this Android does not print it. */
+        val effective: List<String>,
+    )
+
+    /** Where a restriction in force on a profile comes from. */
+    enum class RestrictionSource { NOT_SET, PROFILE_ITSELF, DEVICE_POLICY, BOTH }
+
+    fun sourceOf(r: UserRestrictions, key: String): RestrictionSource {
+        val base = key in r.base
+        val policy = key in r.devicePolicy
+        return when {
+            base && policy -> RestrictionSource.BOTH
+            base -> RestrictionSource.PROFILE_ITSELF
+            policy -> RestrictionSource.DEVICE_POLICY
+            else -> RestrictionSource.NOT_SET
+        }
+    }
+
+    /**
+     * Finds user [userId]'s block in `dumpsys user` output (from its "UserInfo{N:" line to the next user's) and reads
+     * the restriction lists in it. Null when the user's block is not in the output.
+     */
+    fun parseUserRestrictions(dumpsysUser: String, userId: Int): UserRestrictions? {
+        val lines = dumpsysUser.lines()
+        val start = lines.indexOfFirst { it.contains("UserInfo{$userId:") }
+        if (start < 0) return null
+        val end = (start + 1 until lines.size).firstOrNull { i ->
+            lines[i].contains("UserInfo{") || lines[i].trim() == "Device properties:"
+        } ?: lines.size
+        val sections = linkedMapOf<String, MutableList<String>>()
+        var current: MutableList<String>? = null
+        val header = Regex("^(.*[Rr]estrictions):$")
+        val item = Regex("^[a-z0-9_]+$")
+        for (raw in lines.subList(start + 1, end)) {
+            val line = raw.trim()
+            val h = header.find(line)
+            if (h != null) {
+                current = sections.getOrPut(h.groupValues[1]) { mutableListOf() }
+                continue
+            }
+            if (current != null && item.matches(line)) {
+                if (line != "none" && line != "null") current.add(line)
+                continue
+            }
+            current = null
+        }
+        return UserRestrictions(
+            base = sections["Restrictions"].orEmpty(),
+            devicePolicy = sections.filterKeys { it.startsWith("Device policy") }.values.flatten().distinct(),
+            effective = sections["Effective restrictions"].orEmpty(),
+        )
+    }
+
+    /** Android's name for the restriction behind C2 (UserManager.DISALLOW_DEBUGGING_FEATURES). */
+    const val NO_DEBUGGING_FEATURES = "no_debugging_features"
 }

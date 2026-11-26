@@ -96,6 +96,7 @@ object BootRecorder {
             channelGrants = runCatching { context.contentResolver.persistedUriPermissions.size }.getOrDefault(-1),
             shellAlive = Shell.alive,
             quietMode = if (!vault) Env.vaultUser()?.let { runCatching { Env.um.isQuietModeEnabled(it) }.getOrNull() } else null,
+            shellBlocked = if (vault) runCatching { dev.liquid.vault.admin.ShellAccess.read().blocked }.getOrNull() else null,
         )
         Prefs.of(context).edit().putString(Prefs.BOOT_RECORD, VaultJson.encodeToString(BootRecord.serializer(), rec)).apply()
         DebugLog.event("Boot", "recorded the boot: owner ${rec.profileOwner}, lasting permissions ${rec.channelGrants}, shell ${rec.shellAlive}, Vault paused ${rec.quietMode}")

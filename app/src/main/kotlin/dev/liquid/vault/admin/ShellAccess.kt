@@ -59,6 +59,20 @@ object ShellAccess {
         return listOf("cleared \"no debugging features\" as the Vault's owner: ${res.exceptionOrNull()?.asEvidence() ?: "done"}")
     }
 
+    /**
+     * Vault copy, at every start: writes whether "no debugging features" keeps the shell out, and says so when it
+     * changed since the last start (D37: it came and went on the phone without Liquid Vault touching it).
+     */
+    fun noteAtStart(context: android.content.Context) {
+        val now = runCatching { read().blocked }.getOrNull() ?: return
+        val prefs = Prefs.of(context)
+        val before = if (prefs.contains(Prefs.SHELL_BLOCKED_SEEN)) prefs.getBoolean(Prefs.SHELL_BLOCKED_SEEN, false) else null
+        val changed = before != null && before != now
+        val words = "\"no debugging features\" in the Vault: ${if (now) "on, the shell is kept out" else "off"}${if (changed) " (it changed since the last start)" else ""}"
+        if (changed) DebugLog.error("Shell access", words) else DebugLog.event("Shell access", words)
+        prefs.edit().putBoolean(Prefs.SHELL_BLOCKED_SEEN, now).apply()
+    }
+
     /** Puts it back on as the owner. */
     fun block(): List<String> {
         val res = runCatching { Env.dpm.addUserRestriction(Env.admin, KEY) }

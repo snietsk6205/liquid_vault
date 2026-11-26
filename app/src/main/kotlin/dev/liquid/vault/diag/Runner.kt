@@ -143,12 +143,9 @@ object Runner {
         "F2" -> fPolicy("F2", DevicePolicyManager.PERMISSION_GRANT_STATE_GRANTED)
         "F2-undo" -> fPolicy("F2-undo", DevicePolicyManager.PERMISSION_GRANT_STATE_DEFAULT)
         "F3" -> f3()
-        "F4" -> fAppOps("F4", viaShell = false, deny = true)
-        "F5" -> fAppOps("F5", viaShell = false, deny = false)
-        "F5-undo" -> fAppOpsUndo("F5-undo", viaShell = false)
-        "F6" -> fAppOps("F6", viaShell = true, deny = true)
-        "F7" -> fAppOps("F7", viaShell = true, deny = false)
-        "F7-undo" -> fAppOpsUndo("F7-undo", viaShell = true)
+        "F4" -> fAppOps("F4", deny = true)
+        "F5" -> fAppOps("F5", deny = false)
+        "F5-undo" -> fAppOpsUndo("F5-undo")
         "F8" -> f8(AppOpsManager.MODE_ALLOWED)
         "F8-undo" -> f8(AppOpsManager.MODE_DEFAULT)
         "L0" -> l0(host, extras)
@@ -662,28 +659,8 @@ object Runner {
             runCatching { OwnerAppOps.setMode(StorageOps.opString(op), uid, pkg, OwnerAppOps.modeOf(mode)) }.exceptionOrNull()?.asEvidence()
     }
 
-    private class ShellOps(private val user: Int, private val pkg: String) : OpsAccess {
-        override val who = "the shell"
-        override suspend fun read(op: String): Pair<String?, String> {
-            val name = StorageOps.shellName(op)
-            val res = Shell.run(ShellCommands.appOpsGet(user, pkg, name))
-            if (!res.ok) return null to "appops get: exit ${res.exitCode} ${res.output.take(120)}"
-            val read = ShellCommands.parseAppOpRead(res.output, name)
-            return read.effective(StorageOps.defaultMode(op)) to (read.uidMode?.let { "uid mode $it" } ?: "")
-        }
-        override suspend fun write(op: String, mode: String): String? {
-            val res = Shell.run(ShellCommands.appOpsSet(user, pkg, StorageOps.shellName(op), mode))
-            return if (res.ok && res.output.isBlank()) null else "appops set: exit ${res.exitCode}${if (res.output.isNotBlank()) ", ${res.output.take(160)}" else ""}"
-        }
-    }
-
     /** The way to change [pkg]'s app-ops for this check, or the result that says why it cannot run. */
-    private fun opsAccess(id: String, viaShell: Boolean, pkg: String): Pair<OpsAccess?, CheckResult?> {
-        if (viaShell) {
-            Shell.unavailableReason()?.let { return null to r(id, CheckStatus.SKIPPED, it) }
-            val vault = Env.vaultUser()?.id ?: return null to r(id, CheckStatus.SKIPPED, "there is no Vault yet")
-            return ShellOps(vault, pkg) to null
-        }
+    private fun opsAccess(id: String, pkg: String): Pair<OpsAccess?, CheckResult?> {
         val uid = runCatching { Env.app.packageManager.getPackageUid(pkg, 0) }.getOrNull()
             ?: return null to r(id, CheckStatus.SKIPPED, "${label(pkg)} is not installed in the Vault")
         return OwnerOps(uid, pkg) to null
@@ -696,17 +673,17 @@ object Runner {
         return Env.app.packageManager.checkPermission(perm, pkg) == PackageManager.PERMISSION_GRANTED
     }
 
-    private suspend fun fAppOps(id: String, viaShell: Boolean, deny: Boolean): CheckResult {
-        sideOnly(id, vault = !viaShell)?.let { return it }
+    private suspend fun fAppOps(id: String, deny: Boolean): CheckResult {
+        sideOnly(id, vault = true)?.let { return it }
         val pkg = vaultApp() ?: return r(id, CheckStatus.SKIPPED, "choose a Vault app first (in this copy)")
-        val (access, refused) = opsAccess(id, viaShell, pkg)
+        val (access, refused) = opsAccess(id, pkg)
         refused?.let { return it }
         access!!
         val app = label(pkg)
         val req = requested(pkg)
         val target = if (deny) "deny" else "allow"
         val ops = StorageOps.shellNames + if (deny) listOf(StorageOps.CONTROL) else emptyList()
-        val key = (if (viaShell) Prefs.SHELL_OPS_BEFORE else Prefs.OWNER_OPS_BEFORE) + pkg
+        val key = Prefs.OWNER_OPS_BEFORE + pkg
         val saved = StorageOps.decode(Prefs.app.getString(key, null))
         val before = mutableMapOf<String, String?>()
         val now = mutableMapOf<String, String?>()
@@ -739,14 +716,14 @@ object Runner {
         return r(id, verdict.status, verdict.summary, lines)
     }
 
-    /** F5/F7's Undo: the modes from before F4–F7's first change, or Android's defaults when none were kept. */
-    private suspend fun fAppOpsUndo(id: String, viaShell: Boolean): CheckResult {
-        sideOnly(id, vault = !viaShell)?.let { return it }
+    /** F5's Undo: the modes from before F4/F5's first change, or Android's defaults when none were kept. */
+    private suspend fun fAppOpsUndo(id: String): CheckResult {
+        sideOnly(id, vault = true)?.let { return it }
         val pkg = vaultApp() ?: return r(id, CheckStatus.SKIPPED, "choose a Vault app first (in this copy)")
-        val (access, refused) = opsAccess(id, viaShell, pkg)
+        val (access, refused) = opsAccess(id, pkg)
         refused?.let { return it }
         access!!
-        val key = (if (viaShell) Prefs.SHELL_OPS_BEFORE else Prefs.OWNER_OPS_BEFORE) + pkg
+        val key = Prefs.OWNER_OPS_BEFORE + pkg
         val saved = StorageOps.decode(Prefs.app.getString(key, null))
         val lines = mutableListOf<String>()
         var back = 0

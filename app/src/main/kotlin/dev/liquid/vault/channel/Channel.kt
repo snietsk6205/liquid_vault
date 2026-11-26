@@ -60,10 +60,22 @@ object Channel {
     /** The user of the other copy: the Vault's from the personal side, the personal user's from the Vault side. */
     fun otherUserId(): Int? = (if (Env.isVaultSide) Env.personalUser() else Env.vaultUser())?.id
 
-    /** Sets the profile owner's filters that let our two channel actions cross (one each way). Vault side only. */
+    /**
+     * Sets the profile owner's filters that let this app's own actions cross: the channel's two (one each way) and the
+     * personal copy's requests for a screen in the Vault (VaultActionActivity, D43). Vault side only.
+     */
     fun addCrossProfileFilters(dpm: DevicePolicyManager) {
         dpm.addCrossProfileIntentFilter(Env.admin, Crossing.filter(ACTION_TO_VAULT, Intent.CATEGORY_DEFAULT), Crossing.PERSONAL_TO_VAULT)
         dpm.addCrossProfileIntentFilter(Env.admin, Crossing.filter(ACTION_TO_PERSONAL, Intent.CATEGORY_DEFAULT), Crossing.VAULT_TO_PERSONAL)
+        addVaultActionFilter(dpm)
+    }
+
+    fun addVaultActionFilter(dpm: DevicePolicyManager) {
+        dpm.addCrossProfileIntentFilter(
+            Env.admin,
+            Crossing.filter(dev.liquid.vault.vault.VaultActionActivity.ACTION, Intent.CATEGORY_DEFAULT),
+            Crossing.PERSONAL_TO_VAULT,
+        )
     }
 
     /** This copy holds the permission to call the other copy. */
@@ -180,6 +192,22 @@ class ChannelProvider : ContentProvider() {
             "report" -> Bundle().apply { putString("text", Reports.build(context, includeOtherSide = false)) }
             "run" -> Bundle().apply { putString("json", ChannelCalls.runHeadless(context, arg ?: "", extras)) }
             "bridgeList" -> TestFolder.listForChannel(arg ?: "")
+            // Phase 1: the personal copy asks the Vault's owner (VaultService checks it runs in the Vault copy).
+            "vaultApps" -> dev.liquid.vault.vault.VaultService.apps(context)
+            "vaultAppAction" -> dev.liquid.vault.vault.VaultService.appAction(context, arg ?: "", extras?.getString("pkg") ?: "")
+            "vaultVpn" -> dev.liquid.vault.vault.VaultService.vpn(context)
+            "vaultVpnSet" -> dev.liquid.vault.vault.VaultService.setVpn(extras?.getString("pkg"), extras?.getBoolean("lockdown") ?: false)
+            "vaultLock" -> dev.liquid.vault.vault.VaultService.lock(context)
+            "vaultLockNow" -> dev.liquid.vault.vault.VaultService.lockNow()
+            "vaultToken" -> Bundle().apply { putString("token", dev.liquid.vault.vault.VaultService.issueToken()) }
+            "vaultIcon" -> dev.liquid.vault.vault.VaultService.setIconVisible(context, arg == "on")
+            "vaultState" -> dev.liquid.vault.vault.VaultService.state(context)
+            "vaultLastAction" -> Bundle().apply {
+                val p = Prefs.of(context)
+                putBoolean("ok", p.getBoolean(Prefs.LAST_ACTION_OK, false))
+                putString("text", p.getString(Prefs.LAST_ACTION_TEXT, null))
+                putLong("at", p.getLong(Prefs.LAST_ACTION_AT, 0L))
+            }
             "isStorageManager" -> Bundle().apply { putBoolean("value", Environment.isExternalStorageManager()) }
             // P2 from the personal copy: read, lift ("lift") or put back ("block") "no debugging features" as the owner.
             "shellAccess" -> {

@@ -85,6 +85,33 @@ object ShellCommands {
     /** Every user's facts, restrictions included (the shell may read it even when a profile blocks the shell). */
     fun dumpsysUser(): List<String> = listOf("dumpsys", "user")
 
+    // Phase 1: what the shell does to apps (D45). `pm` prints "Package <pkg> new hidden state: true" and
+    // "Package <pkg> new suspended state: true" (AOSP PackageManagerShellCommand).
+
+    /** Freeze: the app is hidden (gone from launchers, cannot run, its data kept). */
+    fun hide(userId: Int, packageName: String): List<String> = listOf("pm", "hide", "--user", user(userId), pkg(packageName))
+
+    fun unhide(userId: Int, packageName: String): List<String> = listOf("pm", "unhide", "--user", user(userId), pkg(packageName))
+
+    /** Suspend: the icon stays, greyed; the app cannot open. */
+    fun suspend(userId: Int, packageName: String): List<String> = listOf("pm", "suspend", "--user", user(userId), pkg(packageName))
+
+    fun unsuspend(userId: Int, packageName: String): List<String> = listOf("pm", "unsuspend", "--user", user(userId), pkg(packageName))
+
+    /** Removes an app (and its data) from one user only: the Vault's copy of an app. Only after a typed confirmation. */
+    fun uninstallForUser(userId: Int, packageName: String): List<String> {
+        require(userId > 0) { "apps are removed from the Vault only, never from the main user" }
+        return listOf("pm", "uninstall", "--user", user(userId), pkg(packageName))
+    }
+
+    fun parseHidden(output: String, packageName: String): Boolean? =
+        Regex("Package ${Regex.escape(packageName)} new hidden state: (true|false)").find(output)?.groupValues?.get(1)?.toBooleanStrict()
+
+    fun parseSuspended(output: String, packageName: String): Boolean? =
+        Regex("Package ${Regex.escape(packageName)} new suspended state: (true|false)").find(output)?.groupValues?.get(1)?.toBooleanStrict()
+
+    fun uninstallSucceeded(output: String): Boolean = output.lineSequence().any { it.trim() == "Success" }
+
     /** For the log: the command as it would be typed, quoting what needs it. */
     fun render(command: List<String>): String = command.joinToString(" ") { arg ->
         if (arg.isEmpty() || arg.any { it.isWhitespace() || it in "'\"$`\\;&|<>()*?![]{}" }) "'" + arg.replace("'", "'\\''") + "'" else arg

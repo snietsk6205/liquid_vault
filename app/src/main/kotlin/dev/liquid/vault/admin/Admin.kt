@@ -131,6 +131,7 @@ object VaultSetup {
             .putLong(Prefs.SETUP_DONE_AT, System.currentTimeMillis())
             .putString(Prefs.SETUP_WHY, why)
             .putString(Prefs.SETUP_STEPS, lines.joinToString("\n"))
+            .putInt(Prefs.SETUP_VERSION, CURRENT_VERSION)
             .apply()
         val failed = lines.count { it.startsWith("FAILED") }
         DebugLog.event("Setup", "Vault setup ran ($why): ${lines.size - failed} steps ok, $failed failed")
@@ -139,6 +140,29 @@ object VaultSetup {
     }
 
     fun isDone(context: Context): Boolean = Prefs.of(context).getLong(Prefs.SETUP_DONE_AT, 0L) > 0L
+
+    /** 2 (Phase 1): the Vault-action filter (D43). A fresh setup gets everything; an older Vault gets what it misses. */
+    const val CURRENT_VERSION = 2
+
+    /**
+     * Brings a Vault set up by an older version of this app to [CURRENT_VERSION], once (each step adds only what is
+     * new, so nothing is added twice). Called when the Vault copy starts.
+     */
+    fun upgrade(context: Context) {
+        Env.init(context)
+        if (!isDone(context) || !runCatching { Env.dpm.isProfileOwnerApp(context.packageName) }.getOrDefault(false)) return
+        val prefs = Prefs.of(context)
+        val from = prefs.getInt(Prefs.SETUP_VERSION, 1)
+        if (from >= CURRENT_VERSION) return
+        val done = mutableListOf<String>()
+        if (from < 2) {
+            done += runCatching { Channel.addVaultActionFilter(Env.dpm) }.fold({ "ok: the personal copy may open screens in the Vault (Vault actions)" }, { "FAILED: Vault actions — ${it.asEvidence()}" })
+        }
+        prefs.edit().putInt(Prefs.SETUP_VERSION, CURRENT_VERSION)
+            .putString(Prefs.SETUP_STEPS, ((prefs.getString(Prefs.SETUP_STEPS, "") ?: "").lines().filter { it.isNotBlank() } + done).joinToString("\n"))
+            .apply()
+        DebugLog.event("Setup", "the Vault's setup went from version $from to $CURRENT_VERSION: ${done.joinToString("; ")}")
+    }
 }
 
 /**

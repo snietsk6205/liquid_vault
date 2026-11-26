@@ -18,7 +18,7 @@ data class CheckDef(
 
 /**
  * The Phase 0 checks (docs/PLAN.md, "The checks"), in the order Diagnostics shows them. The ids are kept forever: the
- * reports Med sends back refer to them.
+ * reports Med sends back refer to them. Retired ids stay reserved: F6, F7 (the shell's app-ops on Vault apps, D40).
  */
 object PhaseZero {
     const val G_DEVICE = "Device"
@@ -59,8 +59,6 @@ object PhaseZero {
         CheckDef("F3", G_STORAGE, "All files (owner policy)", Side.VAULT, "setPermissionGrantState for MANAGE_EXTERNAL_STORAGE. Expected to fail: it is an app-op, not a runtime permission."),
         CheckDef("F4", G_STORAGE, "Deny with app-ops (owner, no shell)", Side.VAULT, "As the owner (Android lets a profile owner change app-ops in its own profile), sets the Vault app's storage, media and All files app-ops and a test op tied to no permission to deny, reads each right after and 1 s later, then puts the test op back. Android keeps the app-ops of permissions the app asks for in step with those permissions (it puts them back), so only the others count."),
         CheckDef("F5", G_STORAGE, "Allow with app-ops (owner, no shell)", Side.VAULT, "The same ops set to allow, read right after and 1 s later; \"Undo\" puts back what they were before F4/F5."),
-        CheckDef("F6", G_STORAGE, "Deny with app-ops (shell)", Side.PERSONAL, "Like F4 with the shell: `appops set --user <Vault> <app> <op> deny`, read back with `appops get` right after and 1 s later, test op put back."),
-        CheckDef("F7", G_STORAGE, "Allow with app-ops (shell)", Side.PERSONAL, "`appops set … allow`, read back right after and 1 s later; \"Undo\" puts back what they were before F6/F7."),
         CheckDef("F8", G_STORAGE, "All files for this app in the Vault", Side.VAULT, "Gives this app's Vault copy All files access with an owner app-op and checks Environment.isExternalStorageManager(): a proof that needs no eyes."),
 
         CheckDef("L0", G_CHANNEL, "Channel ready", Side.BOTH, "Each copy holds a lasting permission to call the other copy (Insular's Shuttle idea). Shows which way of setting it up worked."),

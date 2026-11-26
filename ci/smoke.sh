@@ -52,6 +52,53 @@ run_check() {
   if printf '%s' "$status" | grep -qE "^($want)$"; then pass "$id (user $user): $status"; else fail "$id (user $user): $status, expected $want"; fi
 }
 
+# run_act <user> <act> <want: OK|FAIL regex> <seconds> [am extras…] : a Phase 1 action through AutomationActivity (the
+# same code the screens use); it logs "AUTOMATION-ACT u<user> <act> <OK|FAIL> — <words>", kept in LAST_ACT.
+run_act() {
+  local user=$1 act=$2 want=$3 secs=$4
+  shift 4
+  local from line="" status start
+  from=$(wc -l < "$LOG")
+  adb shell am start --user "$user" -n "$PKG/.automation.AutomationActivity" --es act "$act" "$@" > /dev/null 2>&1
+  start=$SECONDS
+  while [ $((SECONDS - start)) -lt "$secs" ]; do
+    line=$(tail -n +$((from + 1)) "$LOG" | grep -m1 "AUTOMATION-ACT u$user $act ") && break
+    sleep 0.5
+  done
+  if [ -z "$line" ]; then
+    LAST_ACT=""
+    note_wait "$start" 1 "act $act (user $user)"
+    fail "act $act $* (user $user): no answer within $secs s"
+    look "no-act-$act-u$user" 25
+    return 1
+  fi
+  note_wait "$start" 0 "act $act (user $user)"
+  LAST_ACT=${line#*AUTOMATION-ACT }
+  echo "     $LAST_ACT" | cut -c1-240
+  status=$(printf '%s' "$line" | sed -E "s/.*AUTOMATION-ACT u$user $act (OK|FAIL) .*/\1/")
+  if printf '%s' "$status" | grep -qE "^($want)$"; then pass "act $act $* (user $user): $status"; else fail "act $act $* (user $user): $status, expected $want"; fi
+}
+
+# pkg_flag <user> <pkg> <flag> : true/false for hidden, suspended or installed, from dumpsys package's line for the user.
+pkg_flag() {
+  adb shell dumpsys package "$2" 2>/dev/null | tr -d '\r' | grep -m1 -E "^ +User $1: " | grep -oE "$3=(true|false)" | head -1 | cut -d= -f2
+}
+
+# expect_flag <user> <pkg> <flag> <value> <what> : checks what Android itself says about the app.
+expect_flag() {
+  local v
+  v=$(pkg_flag "$1" "$2" "$3")
+  if [ "$v" = "$4" ]; then pass "$5 ($3=$v)"; else fail "$5 ($3=${v:-?}, expected $4)"; fi
+}
+
+# The Vault copy's launcher entries in the Vault (Q4: none by default).
+vault_icon_count() {
+  adb shell cmd package query-activities --components --user "$VU" -a android.intent.action.MAIN -c android.intent.category.LAUNCHER 2>/dev/null \
+    | tr -d '\r' | grep -c "^[[:space:]]*$PKG/"
+}
+
+vault_icon_shown() { [ "$(vault_icon_count)" -ge 1 ]; }
+
 # check_started <user> <id> <from line> <seconds> : AutomationActivity logs "AUTOMATION-START u<user> <id>" when it runs.
 check_started() {
   local i
@@ -253,6 +300,38 @@ if [ "$PART" = "vault" ]; then
     run_check "$VU" F5 "PASS|INFO" 30 --es undo true
   fi
 
+  section "4b. Phase 1: the Vault's apps, lock, VPN and icon (the owner, through the channel)"
+  if [ -n "$CLONE" ]; then
+    run_act 0 vault-apps OK 30 --es pkg "$CLONE"
+    run_act 0 vault-app OK 30 --es do freeze --es pkg "$CLONE"
+    expect_flag "$VU" "$CLONE" hidden true "freeze hides the app in the Vault"
+    run_act 0 vault-apps OK 30 --es pkg "$CLONE"
+    if printf '%s' "$LAST_ACT" | grep -q "frozen=true"; then pass "the Vault's list still shows it, frozen"; else fail "the Vault's list still shows it, frozen"; fi
+    run_act 0 vault-app OK 30 --es do unfreeze --es pkg "$CLONE"
+    expect_flag "$VU" "$CLONE" hidden false "unfreeze brings it back"
+    run_act 0 vault-app OK 30 --es do suspend --es pkg "$CLONE"
+    expect_flag "$VU" "$CLONE" suspended true "suspend greys it out"
+    run_act 0 vault-app OK 30 --es do unsuspend --es pkg "$CLONE"
+    expect_flag "$VU" "$CLONE" suspended false "unsuspend"
+  fi
+  run_act 0 vault-lock OK 30
+  run_act 0 vault-vpn OK 30
+  run_act 0 vault-state OK 30
+  if printf '%s' "$LAST_ACT" | grep -q "setupVersion=2"; then pass "the Vault's setup is version 2 (Vault actions)"; else fail "the Vault's setup is version 2 (Vault actions)"; fi
+  if [ "$(vault_icon_count)" = "0" ]; then pass "the Vault copy has no icon in the Work tab by default"; else fail "the Vault copy has no icon in the Work tab by default"; fi
+  run_act 0 vault-icon OK 30 --es on true
+  if wait_until 10 vault_icon_shown; then
+    pass "its icon can be shown"
+  else
+    fail "its icon can be shown"
+  fi
+  run_act 0 vault-icon OK 30 --es on false
+  # No shell in this part: a personal freeze waits for it, and the opposite action cancels it.
+  run_act 0 personal OK 30 --es do FREEZE --es pkg com.android.camera2
+  if printf '%s' "$LAST_ACT" | grep -q "waits for the shell"; then pass "with no shell, a personal freeze waits"; else fail "with no shell, a personal freeze waits"; fi
+  run_act 0 personal OK 30 --es do UNFREEZE --es pkg com.android.camera2
+  if printf '%s' "$LAST_ACT" | grep -q "waiting: 0"; then pass "unfreeze cancels the waiting freeze"; else fail "unfreeze cancels the waiting freeze"; fi
+
   section "5. The bridges (self-tests, no picker)"
   run_check "$VU" B0 PASS 30
   run_check "$VU" B1 PASS 30 --es selftest true
@@ -366,9 +445,24 @@ if [ "$PART" = "shell" ]; then
   note "app to clone: ${CLONE:-none found}"
   if [ -n "$CLONE" ]; then
     run_check 0 C2 PASS 60 --es clone "$CLONE"
-    run_check 0 F6 PASS 90 --es vaultApp "$CLONE"
-    run_check 0 F7 "PASS|INFO" 90 --es vaultApp "$CLONE"
-    run_check 0 F7 "PASS|INFO" 90 --es undo true
+  fi
+
+  section "4b. Phase 1: personal apps and copying, with the shell"
+  run_act 0 personal OK 60 --es do FREEZE --es pkg com.android.camera2
+  expect_flag 0 com.android.camera2 hidden true "the shell freezes a personal app"
+  run_act 0 personal OK 60 --es do UNFREEZE --es pkg com.android.camera2
+  expect_flag 0 com.android.camera2 hidden false "and unfreezes it"
+  run_act 0 personal OK 60 --es do SUSPEND --es pkg com.android.camera2
+  expect_flag 0 com.android.camera2 suspended true "the shell suspends a personal app"
+  run_act 0 personal OK 60 --es do UNSUSPEND --es pkg com.android.camera2
+  expect_flag 0 com.android.camera2 suspended false "and unsuspends it"
+  COPY=$(vault_launchables | head -1)
+  if [ -n "$COPY" ]; then
+    note "copying $COPY back into the Vault with the shell, after taking it out"
+    adb shell pm uninstall --user "$VU" "$COPY" | tr -d '\r' | tail -1
+    run_act 0 copy OK 60 --es pkg "$COPY"
+    if printf '%s' "$LAST_ACT" | grep -q "silently"; then pass "the copy went through the shell (silent)"; else fail "the copy went through the shell (silent)"; fi
+    expect_flag "$VU" "$COPY" installed true "the app is in the Vault again"
   fi
 
   section "5. Destroy the Vault"

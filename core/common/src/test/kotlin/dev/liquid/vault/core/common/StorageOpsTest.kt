@@ -51,9 +51,8 @@ class StorageOpsTest {
     private fun r(op: String, kind: Kind, later: String, target: String = "deny") = Reading(op, kind, "allow", target, later, later)
 
     @Test
-    fun theOnesThatFollowAPermissionNeverCount() {
-        // What the phone showed for Chrome (F4): READ/WRITE went back, as Android designs it. With the test op staying
-        // denied, the owner's app-ops do reach the app.
+    fun storageAndMediaOpsNeverCount() {
+        // Stock Android (emulator run 14): the ops of Chrome's permissions went back, the test op stayed.
         val v = StorageOps.verdict(
             listOf(
                 r("READ_EXTERNAL_STORAGE", Kind.FOLLOWS_PERMISSION, "allow"),
@@ -65,8 +64,26 @@ class StorageOpsTest {
             "the owner", "Chrome", deny = true,
         )
         assertEquals(CheckStatus.PASS, v.status)
-        assertTrue(v.summary, v.summary.contains("READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE went back"))
+        assertTrue(v.summary, v.summary.contains("(READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE did not stay changed)"))
+        assertTrue(v.summary, v.summary.contains("READ_MEDIA_IMAGES stayed changed"))
         assertTrue(v.summary, v.summary.contains("All files: Chrome does not ask for it"))
+    }
+
+    @Test
+    fun magicOsContactsIsAPass() {
+        // Phone test 0.1.1 (D39): every storage op read "ignore" before and after; All files and the test op stayed.
+        fun ignore(op: String, kind: Kind) = Reading(op, kind, "ignore", "deny", "ignore", "ignore")
+        val v = StorageOps.verdict(
+            listOf(
+                ignore("READ_EXTERNAL_STORAGE", Kind.FREE),
+                ignore("READ_MEDIA_AUDIO", Kind.FOLLOWS_PERMISSION),
+                Reading("MANAGE_EXTERNAL_STORAGE", Kind.ALL_FILES_ASKED, "default", "deny", "deny", "deny"),
+                r(StorageOps.CONTROL, Kind.CONTROL, "deny"),
+            ),
+            "the owner", "Contacts", deny = true,
+        )
+        assertEquals(CheckStatus.PASS, v.status)
+        assertTrue(v.summary, v.summary.startsWith("the owner's app-ops reach Contacts in the Vault: MANAGE_EXTERNAL_STORAGE, PICTURE_IN_PICTURE stayed denied"))
     }
 
     @Test
@@ -80,19 +97,19 @@ class StorageOpsTest {
     }
 
     @Test
-    fun aPartlyChangedAppIsAFail() {
+    fun allFilesNotStayingIsAFail() {
         val v = StorageOps.verdict(
-            listOf(r("READ_MEDIA_IMAGES", Kind.FREE, "allow"), r(StorageOps.CONTROL, Kind.CONTROL, "deny")),
-            "the shell", "Chrome", deny = true,
+            listOf(r("MANAGE_EXTERNAL_STORAGE", Kind.ALL_FILES_ASKED, "allow"), r(StorageOps.CONTROL, Kind.CONTROL, "deny")),
+            "the owner", "Files", deny = true,
         )
         assertEquals(CheckStatus.FAIL, v.status)
-        assertTrue(v.summary, v.summary.startsWith("READ_MEDIA_IMAGES did not stay denied"))
+        assertTrue(v.summary, v.summary.startsWith("MANAGE_EXTERNAL_STORAGE did not stay denied; PICTURE_IN_PICTURE did"))
     }
 
     @Test
     fun anAppWhereAppOpsControlNothingIsInfo() {
         val v = StorageOps.verdict(
-            listOf(r("READ_EXTERNAL_STORAGE", Kind.FOLLOWS_PERMISSION, "allow", target = "allow")),
+            listOf(r("READ_EXTERNAL_STORAGE", Kind.FOLLOWS_PERMISSION, "allow", target = "allow"), r("READ_MEDIA_AUDIO", Kind.FREE, "allow", target = "allow")),
             "the owner", "Gallery", deny = false,
         )
         assertEquals(CheckStatus.INFO, v.status)

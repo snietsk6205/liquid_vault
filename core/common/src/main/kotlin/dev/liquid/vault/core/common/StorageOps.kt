@@ -46,8 +46,11 @@ object StorageOps {
         /** The app asks for the permission behind it: Android keeps the op in step with the permission. */
         FOLLOWS_PERMISSION(counts = false),
 
-        /** The app does not ask for the permission behind it: a change stays. */
-        FREE(counts = true),
+        /**
+         * The app does not ask for the permission behind it. On stock Android a change stays; on MagicOS a uid-wide
+         * mode keeps it tied to the permission anyway (phone test 0.1.1, D39), so it is reported, not counted.
+         */
+        FREE(counts = false),
 
         /** All files, and the app asks for it: the op is the switch. */
         ALL_FILES_ASKED(counts = true),
@@ -100,12 +103,12 @@ object StorageOps {
      */
     fun verdict(readings: List<Reading>, who: String, app: String, deny: Boolean): Verdict {
         val counted = readings.filter { it.kind.counts }
-        val followers = readings.filter { it.kind == Kind.FOLLOWS_PERMISSION }
-        val wentBack = followers.filter { it.later != it.target }
+        val storage = readings.filter { it.kind == Kind.FOLLOWS_PERMISSION || it.kind == Kind.FREE }
+        val unchanged = storage.filter { it.later != it.target }
         val tail = buildList {
-            if (wentBack.isNotEmpty()) add("${names(wentBack)} went back: Android keeps them in step with $app's permissions (use F1/F2 for those)")
-            val stayedFollowers = followers - wentBack.toSet()
-            if (stayedFollowers.isNotEmpty()) add("${names(stayedFollowers)} stayed although $app asks for the permission")
+            if (unchanged.isNotEmpty()) add("storage and media app-ops follow $app's permissions here (${names(unchanged)} did not stay changed): use F1/F2 for those")
+            val stayedStorage = storage - unchanged.toSet()
+            if (stayedStorage.isNotEmpty()) add("${names(stayedStorage)} stayed changed")
             if (readings.any { it.kind == Kind.ALL_FILES_NOT_ASKED }) add("All files: $app does not ask for it")
         }.joinToString("; ")
         val word = if (deny) "denied" else "allowed"

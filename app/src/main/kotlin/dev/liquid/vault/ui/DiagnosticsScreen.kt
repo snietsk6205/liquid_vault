@@ -229,10 +229,20 @@ private fun Header(side: AppSide, shell: Shell.State, tick: Int) {
         facts.forEach { Text(it, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(vertical = 2.dp)) }
         val other = if (side == AppSide.VAULT) Env.personalUser() else Env.vaultUser()?.takeIf { it in Env.profilesWithThisApp() }
         if (other != null) {
+            val scope = rememberCoroutineScope()
             Spacer(Modifier.height(8.dp))
             OutlinedButton(onClick = {
-                runCatching { Env.crossProfile.startMainActivity(ComponentName(context, MainActivity::class.java), other) }
-                    .onFailure { Toast.makeText(context, "Could not open the other copy: ${it.message}", Toast.LENGTH_LONG).show() }
+                if (side == AppSide.VAULT) {
+                    // The personal copy's launcher entry (an alias of MainActivity, since 0.2.0).
+                    runCatching { Env.crossProfile.startMainActivity(dev.liquid.vault.SideComponents.launcherAlias(context), other) }
+                        .onFailure { Toast.makeText(context, "Could not open the other copy: ${it.message}", Toast.LENGTH_LONG).show() }
+                } else {
+                    // The Vault copy may have no icon (Q4): open its Diagnostics through a Vault action (D43).
+                    scope.launch {
+                        val outcome = dev.liquid.vault.control.VaultControl.openInVault(context as android.app.Activity, dev.liquid.vault.vault.VaultActionActivity.DO_OPEN, screen = "diagnostics")
+                        if (!outcome.ok) Toast.makeText(context, "Could not open the Vault copy: ${outcome.message}", Toast.LENGTH_LONG).show()
+                    }
+                }
             }) { Text(if (side == AppSide.VAULT) "Open the personal copy" else "Open the Vault copy") }
         }
     }
@@ -296,7 +306,7 @@ private fun actionsFor(
                 })
             },
         )
-        "F2", "F5", "F7", "F8" -> listOf(runIt(), RowAction("Undo") { undo(id, emptyMap()) })
+        "F2", "F5", "F8" -> listOf(runIt(), RowAction("Undo") { undo(id, emptyMap()) })
         "P2" -> if (vaultSide) listOf(
             runIt("Check"),
             RowAction("Let the shell in") { run(id, mapOf("lift" to "true")) },

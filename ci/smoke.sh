@@ -100,8 +100,8 @@ vault_icon_count() {
 
 vault_icon_shown() { [ "$(vault_icon_count)" -ge 1 ]; }
 
-# The downloaded test app (Shizuku's APK, used as any downloaded app) is installed in the Vault.
-test_app_in_vault() { [ "$(pkg_flag "$VU" moe.shizuku.privileged.api installed)" = "true" ]; }
+# The test app (built by ci/make_test_apk.sh, standing for any app you downloaded) is installed in the Vault.
+test_app_in_vault() { [ "$(pkg_flag "$VU" dev.liquid.vault.testapp installed)" = "true" ]; }
 
 # check_started <user> <id> <from line> <seconds> : AutomationActivity logs "AUTOMATION-START u<user> <id>" when it runs.
 check_started() {
@@ -338,9 +338,9 @@ if [ "$PART" = "vault" ]; then
 
   # Copying an app you downloaded (not built into the phone) without the shell (0.2.0 step 12, D55): the Vault copy
   # cannot see an app that is only on the personal side, so the personal copy names its APK files; Android asks first.
-  TEST_APK=$(ls out/shizuku/*.apk 2>/dev/null | head -1)
-  TPKG=moe.shizuku.privileged.api
-  if [ -n "$TEST_APK" ]; then
+  TEST_APK="$OUT/testapp.apk"
+  TPKG=dev.liquid.vault.testapp
+  if bash ci/make_test_apk.sh "$TEST_APK"; then
     adb install --user 0 -r "$TEST_APK" | tr -d '\r' | tail -1
     expect_flag "$VU" "$TPKG" installed false "the downloaded test app is only on the personal side"
     run_act 0 copy OK 60 --es pkg "$TPKG"
@@ -350,7 +350,7 @@ if [ "$PART" = "vault" ]; then
     wait_log "Vault action: done" 20 || true
     adb uninstall "$TPKG" | tr -d '\r' | tail -1
   else
-    fail "a test APK for the copy without the shell (out/shizuku)"
+    fail "a test app for the copy without the shell (ci/make_test_apk.sh)"
   fi
 
   section "5. The bridges (self-tests, no picker)"

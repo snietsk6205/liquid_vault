@@ -36,7 +36,8 @@ object SideStore {
         MimeTypeMap.getSingleton().getMimeTypeFromExtension(file.extension.lowercase()) ?: "application/octet-stream"
 
     private fun needAllFiles(): Nothing = throw IllegalStateException(
-        "Liquid Vault may not read all files on this side yet: allow \"All files access\" for it (Home › Access rules)",
+        if (dev.liquid.vault.Env.isVaultSide) "the Vault copy may not read all of the Vault's files yet (it allows itself when it starts): try again"
+        else "Liquid Vault may not read your personal files yet: allow \"All files access\" for it (Home › Access rules)",
     )
 
     /** A folder's entries, sorted by name, in the shape the bridge reads. */

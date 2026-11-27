@@ -326,6 +326,8 @@ abstract class CrossBridgeProvider(private val via: String, private val appsPlac
         val c = MatrixCursor(projection ?: DEFAULT_ROOT_PROJECTION)
         if (!runCatching { onRightSide() && Channel.ready() }.getOrDefault(false)) return c
         val union = AccessRules.union(rules(), appsPlace)
+        // No app of this side may reach anything across: no "Liquid Vault" place in its picker at all.
+        if (union.isEmpty && pickerFolders.isEmpty()) return c
         var flags = Root.FLAG_SUPPORTS_IS_CHILD or Root.FLAG_LOCAL_ONLY
         if (union.allWrite || union.writeFolders.isNotEmpty()) flags = flags or Root.FLAG_SUPPORTS_CREATE
         c.newRow()

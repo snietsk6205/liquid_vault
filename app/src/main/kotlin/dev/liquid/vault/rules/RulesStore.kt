@@ -55,6 +55,8 @@ object RulesStore {
     @Synchronized
     private fun save(context: Context, file: RulesFile) {
         _file.value = file
+        // The pickers ask again whether this side's "Liquid Vault" place has anything to show.
+        dev.liquid.vault.bridge.CrossBridgeProvider.notifyRootsChanged("${context.packageName}.bridge.${if (Env.isVaultSide) "vault" else "personal"}")
         val target = path(context)
         val tmp = File(target.parentFile, target.name + ".tmp")
         runCatching {

@@ -131,14 +131,20 @@ object ShellCommands {
             OwnFiles.ANDROID -> "default"
             OwnFiles.NONE, OwnFiles.MEDIA -> "deny"
         }
-        val lines = mutableListOf("appops set --user $u $p MANAGE_EXTERNAL_STORAGE $mode && echo 'ok all-files'")
+        // Android puts the All files app-op back for an app that does not ask for it (PermissionPolicyService, run 21):
+        // there is nothing to set then.
+        val asksAllFiles = MANAGE_EXTERNAL_STORAGE in requested
+        val lines = mutableListOf(
+            if (asksAllFiles) "appops set --user $u $p MANAGE_EXTERNAL_STORAGE $mode && echo 'ok all-files'"
+            else "echo 'ok all-files (it does not ask for All files)'",
+        )
         val verb = when (own) {
             OwnFiles.MEDIA, OwnFiles.ALL -> "grant"
             OwnFiles.NONE -> "revoke"
             OwnFiles.ANDROID -> null
         }
         if (verb != null) {
-            for (perm in requested) {
+            for (perm in requested.filter { it != MANAGE_EXTERNAL_STORAGE }) {
                 require(perm.matches(Regex("^[A-Za-z0-9_.]+$"))) { "not a permission name: $perm" }
                 lines += "pm $verb --user $u $p $perm >/dev/null 2>&1 && echo 'ok $perm' || echo 'no $perm'"
             }
@@ -146,7 +152,9 @@ object ShellCommands {
         return listOf("sh", "-c", lines.joinToString("; "))
     }
 
-    fun ownFilesDone(output: String): Boolean = output.lineSequence().any { it.trim() == "ok all-files" }
+    fun ownFilesDone(output: String): Boolean = output.lineSequence().any { it.trim().startsWith("ok all-files") }
+
+    const val MANAGE_EXTERNAL_STORAGE = "android.permission.MANAGE_EXTERNAL_STORAGE"
 
     /**
      * The part of a failed `pm` answer worth showing: its first line plus the exception's own message when there is

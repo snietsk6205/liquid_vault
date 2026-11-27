@@ -19,6 +19,14 @@ APK=$(ls out/*.apk | head -1)
 VU=""
 
 # run_check <user> <id> <expected status regex> <seconds> [am extras…]
+# quoted <args...> : the arguments as one string for the phone's shell, each in single quotes. adb shell joins its
+# arguments with spaces, so a value with a space ("Documents/Liquid Vault test") would otherwise arrive cut (run 21).
+quoted() {
+  local a out=""
+  for a in "$@"; do out="$out '$(printf '%s' "$a" | sed "s/'/'\\\\''/g")'"; done
+  printf '%s' "$out"
+}
+
 run_check() {
   local user=$1 id=$2 want=$3 secs=$4
   shift 4
@@ -28,7 +36,7 @@ run_check() {
     # A screen started at the same moment as another app screen can stay unstarted behind it (run 8: the Vault copy's
     # first channel connection came to the front): the second try clears the app's task first.
     clear=""; [ "$try" = 2 ] && clear="--activity-clear-task"
-    adb shell am start --user "$user" $clear -n "$PKG/.automation.AutomationActivity" --es run "$id" "$@" > /dev/null 2>&1
+    adb shell "am start --user $user $clear -n $PKG/.automation.AutomationActivity --es run $id$(quoted "$@")" > /dev/null 2>&1
     check_started "$user" "$id" "$from" 10 && break
     [ "$try" = 1 ] && note "check $id (user $user): its screen did not start within 10 s; starting it again"
   done
@@ -59,7 +67,7 @@ run_act() {
   shift 4
   local from line="" status start
   from=$(wc -l < "$LOG")
-  adb shell am start --user "$user" -n "$PKG/.automation.AutomationActivity" --es act "$act" "$@" > /dev/null 2>&1
+  adb shell "am start --user $user -n $PKG/.automation.AutomationActivity --es act $act$(quoted "$@")" > /dev/null 2>&1
   start=$SECONDS
   while [ $((SECONDS - start)) -lt "$secs" ]; do
     line=$(tail -n +$((from + 1)) "$LOG" | grep -m1 "AUTOMATION-ACT u$user $act ") && break
@@ -144,6 +152,19 @@ expect_all_files() {
   local m
   m=$(all_files_mode "$1" "$2")
   if [ "$m" = "$3" ]; then pass "$4 (All files: $m)"; else fail "$4 (All files: $m, expected $3)"; fi
+}
+
+# perm_granted <user> <pkg> <permission> : "true"/"false" from dumpsys package's runtime permissions for that user.
+perm_granted() {
+  adb shell dumpsys package "$2" 2>/dev/null | tr -d '\r' | awk -v u="User $1:" -v p="$3: granted=" '
+    /^ +User [0-9]+:/ { inside = index($0, u) > 0; next }
+    inside && index($0, p) { sub(/.*granted=/, ""); sub(/,.*/, ""); print; exit }'
+}
+
+expect_perm() {
+  local g
+  g=$(perm_granted "$1" "$2" "$3")
+  if [ "$g" = "$4" ]; then pass "$5 (${3##*.}: granted=$g)"; else fail "$5 (${3##*.}: granted=${g:-?}, expected $4)"; fi
 }
 
 # uri_of <key> : a URI from the last bridge-grant act ("children=<uri> file=<uri>").
@@ -457,17 +478,22 @@ if [ "$PART" = "vault" ]; then
     fail "both copies logged the app's allowed and refused calls"
   fi
 
-  # A Vault app's own files, set by the owner (D57): All files by the owner's app-op.
+  # A Vault app's own files, set by the owner (D57): photos by permission policy, All files by the owner's app-op. The
+  # test app asks for both (Android gives All files only to an app that asks for it: run 21).
+  run_act 0 rule OK 30 --es pkg "$TPKG" --es place vault --es own ALL
+  expect_all_files "$VU" "$TPKG" allow "own files of a Vault app: All files"
+  expect_perm "$VU" "$TPKG" android.permission.READ_MEDIA_IMAGES true "and its photos (policy)"
+  run_act 0 rule OK 30 --es pkg "$TPKG" --es place vault --es own NONE
+  expect_all_files "$VU" "$TPKG" deny "own files of a Vault app: No files"
+  expect_perm "$VU" "$TPKG" android.permission.READ_MEDIA_IMAGES false "and no photos (policy)"
+  run_act 0 rule OK 30 --es pkg "$TPKG" --es place vault --es own ANDROID
+  expect_all_files "$VU" "$TPKG" default "own files of a Vault app: back to Android"
+  # An app that does not ask for All files: nothing to set, and the rule still says done.
   OAPP=${FAPP:-$CLONE}
   if [ -n "$OAPP" ]; then
     run_act 0 rule OK 30 --es pkg "$OAPP" --es place vault --es own ALL
-    expect_all_files "$VU" "$OAPP" allow "own files of a Vault app: All files"
-    run_act 0 rule OK 30 --es pkg "$OAPP" --es place vault --es own NONE
-    expect_all_files "$VU" "$OAPP" deny "own files of a Vault app: No files"
+    if printf '%s' "$LAST_ACT" | grep -q "does not ask for All files"; then pass "an app that does not ask for All files is told so"; else fail "an app that does not ask for All files is told so"; fi
     run_act 0 rule OK 30 --es pkg "$OAPP" --es place vault --es own ANDROID
-    expect_all_files "$VU" "$OAPP" default "own files of a Vault app: back to Android"
-  else
-    note "no Vault app to set own files on"
   fi
   adb uninstall "$TPKG" | tr -d '\r' | tail -1
 
@@ -602,11 +628,21 @@ if [ "$PART" = "shell" ]; then
   expect_flag 0 com.android.camera2 suspended true "the shell suspends a personal app"
   run_act 0 personal OK 60 --es do UNSUSPEND --es pkg com.android.camera2
   expect_flag 0 com.android.camera2 suspended false "and unsuspends it"
-  # Phase 2: a personal app's own files, through the shell (D57).
-  run_act 0 rule OK 60 --es pkg com.android.camera2 --es place personal --es own ALL
-  expect_all_files 0 com.android.camera2 allow "own files of a personal app: All files (the shell's app-op)"
-  run_act 0 rule OK 60 --es pkg com.android.camera2 --es place personal --es own ANDROID
-  expect_all_files 0 com.android.camera2 default "own files of a personal app: back to Android"
+  # Phase 2: a personal app's own files, through the shell (D57), on the test app (it asks for All files and photos).
+  if bash ci/make_test_apk.sh "$OUT/testapp.apk"; then
+    adb install --user 0 -r "$OUT/testapp.apk" | tr -d '\r' | tail -1
+    run_act 0 rule OK 60 --es pkg dev.liquid.vault.testapp --es place personal --es own ALL
+    expect_all_files 0 dev.liquid.vault.testapp allow "own files of a personal app: All files (the shell's app-op)"
+    expect_perm 0 dev.liquid.vault.testapp android.permission.READ_MEDIA_IMAGES true "and its photos (the shell's grant)"
+    run_act 0 rule OK 60 --es pkg dev.liquid.vault.testapp --es place personal --es own NONE
+    expect_all_files 0 dev.liquid.vault.testapp deny "own files of a personal app: No files"
+    expect_perm 0 dev.liquid.vault.testapp android.permission.READ_MEDIA_IMAGES false "and no photos (the shell's revoke)"
+    run_act 0 rule OK 60 --es pkg dev.liquid.vault.testapp --es place personal --es own ANDROID
+    expect_all_files 0 dev.liquid.vault.testapp default "own files of a personal app: back to Android"
+    adb uninstall dev.liquid.vault.testapp | tr -d '\r' | tail -1
+  else
+    fail "a test app for a personal app's own files (ci/make_test_apk.sh)"
+  fi
   COPY=$(vault_launchables | head -1)
   if [ -n "$COPY" ]; then
     note "copying $COPY back into the Vault with the shell, after taking it out"

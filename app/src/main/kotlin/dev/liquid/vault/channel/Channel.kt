@@ -215,6 +215,7 @@ class ChannelProvider : ContentProvider() {
             "rulesGet" -> Bundle().apply { putString("json", dev.liquid.vault.rules.RulesStore.json(context)) }
             "vaultOwnFiles" -> dev.liquid.vault.rules.OwnFilesControl.applyInVault(context, extras?.getString("pkg") ?: "", dev.liquid.vault.core.common.OwnFiles.valueOf(arg ?: ""))
             "accessLog" -> Bundle().apply { putStringArrayList("lines", ArrayList(AccessLog.jsonLines())) }
+            "appAsks" -> dev.liquid.vault.rules.OwnFilesControl.asks(context, arg ?: "")
             "bridgeGrant" -> dev.liquid.vault.bridge.BridgeGrants.grant(context, extras?.getString("pkg") ?: "", arg ?: "", extras?.getString("file"))
             // Phase 1: the personal copy asks the Vault's owner (VaultService checks it runs in the Vault copy).
             "vaultApps" -> dev.liquid.vault.vault.VaultService.apps(context)

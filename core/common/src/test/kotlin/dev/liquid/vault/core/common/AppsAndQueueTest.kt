@@ -104,7 +104,7 @@ class AppsAndQueueTest {
 
     @Test
     fun ownFilesForAPersonalAppIsOneScript() {
-        val media = listOf("android.permission.READ_MEDIA_IMAGES", "android.permission.READ_MEDIA_VIDEO")
+        val media = listOf("android.permission.READ_MEDIA_IMAGES", "android.permission.READ_MEDIA_VIDEO", ShellCommands.MANAGE_EXTERNAL_STORAGE)
         val all = ShellCommands.ownFiles(0, "org.mozilla.firefox", OwnFiles.ALL, media)
         assertEquals(listOf("sh", "-c"), all.take(2))
         assertTrue(all[2].startsWith("appops set --user 0 org.mozilla.firefox MANAGE_EXTERNAL_STORAGE allow && echo 'ok all-files'"))
@@ -115,6 +115,11 @@ class AppsAndQueueTest {
         assertTrue(android.contains("MANAGE_EXTERNAL_STORAGE default") && !android.contains("pm "))
         assertThrows(IllegalArgumentException::class.java) { ShellCommands.ownFiles(0, "x; reboot", OwnFiles.ALL, emptyList()) }
         assertThrows(IllegalArgumentException::class.java) { ShellCommands.ownFiles(0, "org.mozilla.firefox", OwnFiles.ALL, listOf("a;reboot")) }
+        assertFalse(all[2].contains("pm grant --user 0 org.mozilla.firefox android.permission.MANAGE_EXTERNAL_STORAGE"))
+        // An app that does not ask for All files: Android would put the app-op back (run 21), so it is not set.
+        val noAll = ShellCommands.ownFiles(0, "com.android.camera2", OwnFiles.ALL, listOf("android.permission.READ_MEDIA_IMAGES"))[2]
+        assertTrue(noAll.startsWith("echo 'ok all-files (it does not ask for All files)'") && !noAll.contains("appops"))
+        assertTrue(ShellCommands.ownFilesDone("ok all-files (it does not ask for All files)\n"))
         assertTrue(ShellCommands.ownFilesDone("ok all-files\nno android.permission.READ_MEDIA_VIDEO\n"))
         assertFalse(ShellCommands.ownFilesDone("Error: Unknown package\n"))
     }

@@ -132,7 +132,7 @@ object ActionQueueStore {
         mutex.withLock {
             for (a in ActionQueue.due(_queue.value)) {
                 // An app's own files need the storage and media permissions it asks for (D57).
-                val requested = if (a.action == ShellAction.OWN_FILES) dev.liquid.vault.rules.OwnFilesControl.requested(context, a.pkg) else emptyList()
+                val requested = if (a.action == ShellAction.OWN_FILES) dev.liquid.vault.rules.OwnFilesControl.requestedForShell(context, a.pkg) else emptyList()
                 val result = runCatching { Shell.run(ActionQueue.command(a, requested), 30_000) }
                 val output = result.getOrNull()?.output ?: ""
                 val ok = result.isSuccess && ActionQueue.succeeded(a, output)

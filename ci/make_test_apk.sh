@@ -3,6 +3,7 @@
 # download, no change to the workflow). It stands for any app you installed: copied into the Vault without the shell
 # (D55), and as an app the access rules allow or refuse (D60): its Probe activity lists, reads or writes one content
 # URI it was lent and logs "PROBE u<user> <op> OK|FAIL ..." under Liquid Vault's log tag, so the test reads one log.
+# It asks for All files and for photos, so an app's own files (D57) can be checked against Android's record.
 set -euo pipefail
 out=$1
 sdk=${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}
@@ -15,6 +16,8 @@ cat > "$work/AndroidManifest.xml" <<'XML'
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="dev.liquid.vault.testapp" android:versionCode="2" android:versionName="2">
     <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="34" />
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <application android:label="LV test app">
         <activity android:name="android.app.Activity" android:exported="true">
             <intent-filter>

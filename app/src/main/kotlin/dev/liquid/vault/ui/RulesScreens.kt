@@ -75,6 +75,7 @@ import dev.liquid.vault.core.designsystem.LauncherIcons
 import dev.liquid.vault.core.designsystem.LocalKitScreen
 import dev.liquid.vault.core.designsystem.kitLoneCard
 import dev.liquid.vault.diag.Host
+import dev.liquid.vault.rules.OwnFilesControl
 import dev.liquid.vault.rules.RulesStore
 import dev.liquid.vault.shell.Shell
 import kotlinx.coroutines.Dispatchers
@@ -266,6 +267,15 @@ private fun RuleEditor(app: AppRecord, saved: AppRule?, onBack: () -> Unit) {
     var busy by remember { mutableStateOf(false) }
     var choosing by remember { mutableStateOf(false) }
     val across = AccessRules.acrossName(app.place)
+    // What the app asks for, from the copy that has it: own files change nothing for an app that asks for none.
+    val asks by produceState<String?>(null, app) {
+        value = withContext(Dispatchers.IO) {
+            runCatching {
+                if (app.place == Place.PERSONAL) OwnFilesControl.asks(context, app.pkg).getString("words")
+                else Channel.call("appAsks", app.pkg)?.getString("words")
+            }.getOrNull()
+        }
+    }
     BackHandler { onBack() }
 
     fun save(next: AppRule) {
@@ -304,6 +314,9 @@ private fun RuleEditor(app: AppRecord, saved: AppRule?, onBack: () -> Unit) {
         )
 
         KitSection("Its own files, in ${ownSideName(app.place)}")
+        asks?.let {
+            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 32.dp, vertical = 2.dp))
+        }
         KitSegments(labels = listOf("Android", "None", "Media", "All"), selected = OwnFiles.entries.indexOf(rule.own)) { i ->
             if (!busy) save(rule.copy(own = OwnFiles.entries[i]))
         }

@@ -9,7 +9,8 @@ All notable changes to Liquid Vault, newest first. Each version's section is als
 ### Added
 - **Access rules** (Home › Access rules). For each app, on each side:
   - **its own files** on its side: *Android decides*, *No files*, *Photos and media* or *All files* (in the Vault set
-    by Liquid Vault as the Vault's owner; on the personal side through the shell, waiting for it when it is off);
+    by Liquid Vault as the Vault's owner; on the personal side through the shell, waiting for it when it is off). The
+    page says what the app asks for; Android gives *All files* only to apps that ask for it;
   - **the other side's files**: *None*, *Folders* you choose, or *All*, read-only or **Can change files**. Apps reach
     them only through the **Liquid Vault** place of the file picker: personal apps see *Vault files*, Vault apps see
     *Personal files*, each just what its rule allows.

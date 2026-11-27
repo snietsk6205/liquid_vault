@@ -138,7 +138,7 @@ user 0"), and "continue". Med had merged the branch into main (PR #3) after 0.2.
 | 3 | Reports | Better | The debug log survives restarts and marks errors "!" (D56): the 0.2.0 report had lost step 12's error. |
 | 4 | CI | Note | Run 19 was held by GitHub ("action required", no jobs) when a push changed the workflow file; the workflow stays as on main and the test app is built with the SDK's tools instead (D60). The force push to restart the branch from main was refused by the session's safety check, so work continues on top of the merged history (a pull request still shows only the new commits). |
 | 5 | Phase 2 | Built | Rules (own files; the other side's files: none / folders / all, read-only or read-write; presets), the bridge both ways, access log, backup and restore (D57–D60). Locked folder moved to Phase 3 (D62). |
-| 6 | Phase 2 emulator test | See CI | A test app with code lists, reads and writes through lent folders both ways, refused without a rule, outside its folders and when read-only; both logs; own files for a Vault app (owner) and a personal app (shell). |
+| 6 | Phase 2 emulator test | Passed (run 23) | A test app with code lists, reads and writes through lent folders both ways, refused without a rule, outside its folders and when read-only; both logs; own files for a Vault app (owner: All files and the photo permission) and a personal app (shell); the two new screens open. Run 21 had found two things: the test passed values with spaces unquoted (fixed in the test), and Android gives All files only to apps that ask for it (Liquid Vault now sets it only for those and says so, D57). |
 | 7 | Release 0.3.0 | Release commit | One release this session. |
 
 **Known limits**

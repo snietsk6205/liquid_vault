@@ -2,7 +2,7 @@
 
 All notable changes to Liquid Vault, newest first. Each version's section is also its release notes on GitHub.
 
-## 0.3.0 — 2026-11-26
+## 0.3.0 — 2026-11-27
 
 *Phase 2: access rules. You decide, app by app and side by side, which files each app may reach.*
 
